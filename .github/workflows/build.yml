@@ -1,0 +1,53 @@
+# 소스에서 Windows 실행 파일을 빌드한다 (검증 가능한 빌드 — 코드 서명 정책 참고).
+# SignPath 승인 뒤에는 이 워크플로의 산출물(DPR.exe)만 서명 요청을 보낸다.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-exe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 버전 정보 확인 (VERSION = wails.json productVersion)
+        run: |
+          v=$(cat VERSION)
+          w=$(grep -oP '"productVersion":\s*"\K[^"]+' wails.json)
+          echo "VERSION=$v wails.json=$w"
+          test "$v" = "$w"
+
+      - name: 도구 설치 (mingw-w64, Wails CLI)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+
+      - name: Go 테스트
+        run: go test ./internal/... -timeout 300s
+
+      - name: Windows exe 빌드
+        run: make windows
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DPR-windows
+          path: build/bin/DPR.exe
+          if-no-files-found: error

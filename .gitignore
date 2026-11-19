@@ -1,0 +1,36 @@
+# ── 실데이터/런타임 데이터: 절대 커밋하지 않음 ──
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+/*.xlsx
+/*.xls
+/*.jpg
+/*.jpeg
+/*.png
+/*.heic
+# 실데이터 검증용 로컬 폴더
+/realdata/
+
+# Wails / Go 빌드 산출물
+build/bin/
+/dpr
+/dpr.exe
+*.test
+coverage.out
+
+# 프론트엔드 (dist 는 go:embed 를 위해 gitkeep 만 추적)
+node_modules/
+frontend/dist/*
+!frontend/dist/gitkeep
+frontend/package.json.md5
+*.log
+*.tsbuildinfo
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+build/release/

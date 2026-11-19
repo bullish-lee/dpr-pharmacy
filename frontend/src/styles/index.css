@@ -1,0 +1,151 @@
+@import "tailwindcss";
+@import "pretendard/dist/web/variable/pretendardvariable.css";
+
+/*
+ * DPR 디자인 토큰 — docs/UI_GUIDE.md 참고
+ * 원칙: 잉크(검정)·흰 바탕·차가운 회색. 파랑 = 조작/정보, 색은 '조치가 필요한 곳'에만.
+ * 금액은 항상 기본 글자색(빨강/파랑 금지: 한국 관례상 증감 색과 혼동).
+ */
+@theme {
+  --font-sans: "Pretendard Variable", Pretendard, "Malgun Gothic", "Apple SD Gothic Neo", "Segoe UI", system-ui, sans-serif;
+
+  --color-gray-0: #ffffff;
+  --color-gray-50: #f7f8fa;
+  --color-gray-100: #eff1f4;
+  --color-gray-200: #e2e6ea;
+  --color-gray-300: #cbd1d8;
+  --color-gray-400: #8a94a0;
+  --color-gray-500: #7a8491;
+  --color-gray-600: #5c6672;
+  --color-gray-700: #444d59;
+  --color-gray-800: #2b323b;
+  --color-gray-900: #191e25;
+
+  --color-blue-50: #edf3ff;
+  --color-blue-100: #dbe7ff;
+  --color-blue-500: #3b7bf0;
+  --color-blue-600: #1f5fe0;
+  --color-blue-700: #1a4db3;
+
+  --color-green-50: #e9f7ef;
+  --color-green-600: #12945a;
+  --color-green-700: #0b7445;
+
+  --color-amber-50: #fff3dc;
+  --color-amber-600: #c27400;
+  --color-amber-700: #965400;
+
+  --color-red-50: #ffeeee;
+  --color-red-600: #d6343a;
+  --color-red-700: #b3242a;
+
+  --color-edit: #fff6d5;
+
+  --shadow-float: 0 4px 12px rgba(16, 24, 40, 0.08);
+  --shadow-dialog: 0 12px 32px rgba(16, 24, 40, 0.16);
+}
+
+/* 다크 테마 — 같은 토큰 이름에 어두운 값을 넣는다 (설정 → 화면 → 테마, 또는 사이드바 버튼).
+ * 바코드를 띄우는 흰 바탕(도매 앱 스캔용)은 테마와 무관하게 흰색을 유지한다. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-gray-0: #171c23;
+  --color-gray-50: #0f1318;
+  --color-gray-100: #1f252d;
+  --color-gray-200: #2b323c;
+  --color-gray-300: #3b4451;
+  --color-gray-400: #6b7685;
+  --color-gray-500: #8b96a4;
+  --color-gray-600: #a6b0bc;
+  --color-gray-700: #c5ccd5;
+  --color-gray-800: #dfe4ea;
+  --color-gray-900: #eef1f5;
+
+  --color-blue-50: #16233b;
+  --color-blue-100: #1d3054;
+  --color-blue-500: #5b93f5;
+  --color-blue-600: #3d7bf0;
+  --color-blue-700: #94b9ff;
+
+  --color-green-50: #10291d;
+  --color-green-600: #3cc282;
+  --color-green-700: #74d9a6;
+
+  --color-amber-50: #2d2410;
+  --color-amber-600: #e09a2a;
+  --color-amber-700: #f2bd61;
+
+  --color-red-50: #33171a;
+  --color-red-600: #f0585e;
+  --color-red-700: #ff9094;
+
+  --color-edit: #3b3418;
+
+  --shadow-float: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.55);
+}
+
+@layer base {
+  html {
+    font-size: 16px; /* 화면 배율 설정이 이 값을 바꿔 전체(rem)를 확대한다 */
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-gray-50 text-gray-900 font-sans;
+    font-size: 0.875rem;
+    line-height: 1.43;
+    overflow: hidden;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-gray-300) transparent;
+  }
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-blue-500);
+    outline-offset: 1px;
+  }
+  /* 보험코드·제조번호·일련번호: 0 과 O 구분 */
+  .code {
+    font-variant-numeric: tabular-nums slashed-zero;
+    letter-spacing: 0.01em;
+  }
+}
+
+@layer utilities {
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* 스캔 결과 카드 플래시 */
+@keyframes flash-in {
+  0% {
+    transform: scale(0.985);
+    filter: brightness(1.08);
+  }
+  100% {
+    transform: scale(1);
+    filter: none;
+  }
+}
+.flash {
+  animation: flash-in 0.45s ease-out;
+}
+@keyframes row-highlight {
+  0% {
+    background: var(--color-blue-50);
+  }
+  100% {
+    background: transparent;
+  }
+}
+.row-moved {
+  animation: row-highlight 1.2s ease-out;
+}
