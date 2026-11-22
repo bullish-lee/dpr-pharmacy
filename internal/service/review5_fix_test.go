@@ -295,3 +295,52 @@ func TestMonthlyUseCoverage(t *testing.T) {
 		t.Fatalf("월 사용량 %.1f", got)
 	}
 }
+
+// 실물보상 완료는 '도매 앱에 등록했다고 표시한' 수량으로 기록한다 — 판정의 보유량에는 안 찍은 재고의 추정분이 섞일 수 있다
+func TestFinishPhysicalUsesRegisteredQty(t *testing.T) {
+	s, err := NewTemp(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	seedSample(t, s)
+	const eff, code = "2026-11-01", "900000010"
+	sw := supplierID(t, s, "다솜도매")
+	if _, err := s.FinishPhysical(eff, code, sw); err == nil {
+		t.Fatal("등록한 바코드가 없으면 완료로 기록하지 않는다")
+	}
+	sc, err := s.RecordScan(ScanInput{EffectiveDate: eff, ProductCode: code, Raw: "(01)08809000000117(17)290531(10)LOT-1003(21)SN10000009"})
+	if err != nil || sc.Status != "added" || sc.Unit.SupplierID != sw {
+		t.Fatalf("스캔: %+v %v", sc, err)
+	}
+	if err := s.SetScanRegistered(sc.Unit.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := s.ProductDetail(eff, code)
+	var held domain.Qty
+	for _, p := range d.Positions {
+		if p.SupplierID == sw {
+			held = p.HeldUsed
+		}
+	}
+	st, err := s.FinishPhysical(eff, code, sw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Qty != sc.Unit.Qty || st.Qty >= held || st.Status != "done" || st.Method != "physical" {
+		t.Fatalf("완료 수량 %s (등록 %s, 판정 보유량 %s) %s/%s", st.Qty, sc.Unit.Qty, held, st.Method, st.Status)
+	}
+	if want := float64(domain.RoundWon(st.Qty.Float() * d.Row.Delta)); st.Amount != want {
+		t.Fatalf("금액 %.0f, 기대 %.0f", st.Amount, want)
+	}
+	// 다시 확정해도 완료 행은 그대로
+	if _, err := s.ConfirmDecision(eff, code); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := s.ListSettlements(SettlementFilter{EffectiveDate: eff, Code: code})
+	for _, v := range list {
+		if v.SupplierID == sw && (v.Qty != st.Qty || v.Status != "done") {
+			t.Fatalf("완료 행이 바뀜: %+v", v)
+		}
+	}
+}

@@ -4,6 +4,7 @@ import { DashboardPage } from '../features/dashboard/DashboardPage'
 import { CutsPage } from '../features/cuts/CutsPage'
 import { CutCasePage } from '../features/cuts/CutCasePage'
 import { ProductPage } from '../features/cuts/ProductPage'
+import { LotPhotoPage } from '../features/cuts/LotPhotoPage'
 import { NoticesPage, NoticeDetailPage } from '../features/notices/NoticesPage'
 import { InventoryPage } from '../features/inventory/InventoryPage'
 import { LookupPage } from '../features/lookup/LookupPage'
@@ -31,6 +32,7 @@ function Routes() {
       if (c === 'p' && d && e === 'scan') return <ScanPage date={b} code={d} />
       if (c === 'p' && d && e === 'register') return <RegisterPage date={b} code={d} />
       if (c === 'p' && d) return <ProductPage date={b} code={d} />
+      if (c === 'lots') return <LotPhotoPage date={b} />
       return <CutCasePage date={b} />
     case 'notices':
       return b ? <NoticeDetailPage id={Number(b)} /> : <NoticesPage />

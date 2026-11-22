@@ -5,6 +5,7 @@ import { dateDot, dateLong, dday, parseDate, pct, price, qty, todayISO, won, won
 import { Link, navigate, paths } from '../../app/router'
 import { DataTable } from '../../components/DataTable'
 import { Badge, Button, Callout, Card, Empty, ErrorBox, Input, Kbd, Kpi, PageHeader, Segmented, Skeleton, cx } from '../../components/ui'
+import { useLotEvidence } from './LotPhotoPage'
 import { FlagBadges, RecBadge } from './shared'
 
 type Tab = 'rank' | 'delete'
@@ -134,7 +135,10 @@ export function CutCasePage({ date }: { date: string }) {
 // ── 작업 목록 (회차 허브) ─────────────────────────────────────────────
 function TaskList({ data, heldRows }: { data: service.Ranking; heldRows: service.RankRow[] }) {
   const late = data.effectiveDate < todayISO()
-  const counted = heldRows.filter((r) => (late ? r.laterCountQty : r.countQty) != null).length
+  const countedCodes = heldRows.filter((r) => (late ? r.laterCountQty : r.countQty) != null).map((r) => r.code)
+  const counted = countedCodes.length
+  const evidence = useLotEvidence(countedCodes)
+  const withPhoto = new Set((evidence.data ?? []).map((e) => e.code)).size
   const physical = heldRows.filter((r) => r.recommendation === 'physical_review' || r.physicalUpside > 0)
   const scanned = physical.filter((r) => r.scan.units > 0).length
   const ambiguous = heldRows.reduce((s, r) => s + (r.scan?.ambiguous ?? 0), 0)
@@ -149,6 +153,12 @@ function TaskList({ data, heldRows }: { data: service.Ranking; heldRows: service
       title: '판정 확인·확정',
       detail: `서류 ${data.totals.document} · 실물 검토 ${data.totals.physical}${data.totals.check ? ` · 실제가 확인 ${data.totals.check}` : ''} · 확정 ${confirmed}/${heldRows.length}`,
       st: heldRows.length === 0 ? 'na' : data.totals.check > 0 ? 'attention' : confirmed === 0 ? 'todo' : confirmed < heldRows.length ? 'doing' : 'done',
+    },
+    {
+      title: '사입정보 사진 확인',
+      detail: counted === 0 ? '실계수를 넣은 품목이 없습니다' : `${withPhoto} / ${counted}개 품목 · 유효기간·제조번호가 보이는 사입 내역을 사진으로 올리세요`,
+      st: counted === 0 ? 'na' : withPhoto === 0 ? 'todo' : withPhoto < counted ? 'doing' : 'done',
+      to: paths.lotPhotos(data.effectiveDate),
     },
     {
       title: '바코드로 도매 확인',
@@ -166,7 +176,7 @@ function TaskList({ data, heldRows }: { data: service.Ranking; heldRows: service
   }
   return (
     <Card pad={false}>
-      <ol className="grid grid-cols-5 divide-x divide-gray-100 max-[1180px]:grid-cols-1 max-[1180px]:divide-x-0 max-[1180px]:divide-y">
+      <ol className="grid grid-cols-6 divide-x divide-gray-100 max-[1180px]:grid-cols-1 max-[1180px]:divide-x-0 max-[1180px]:divide-y">
         {tasks.map((t, i) => {
           const l = label[t.st]
           const inner = (

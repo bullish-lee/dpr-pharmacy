@@ -368,6 +368,12 @@ func (a *App) ListUnresolved() ([]service.UnresolvedRow, error) { return a.svc.L
 func (a *App) ResolveUnresolved(id int64, code string) error {
 	return a.svc.ResolveUnresolved(id, code)
 }
+func (a *App) ResolveUnresolvedByCode(id int64, code string) error {
+	return a.svc.ResolveUnresolvedByCode(id, code)
+}
+func (a *App) CheckProductCode(code string) (*service.ProductCodeInfo, error) {
+	return a.svc.CheckProductCode(code)
+}
 func (a *App) DefaultBaselineDate() string { return a.svc.DefaultBaselineDate() }
 
 // PickFile 은 OS 파일 선택 창을 연다 (엑셀/CSV).
@@ -394,6 +400,13 @@ func (a *App) RunCrawl() (*service.CrawlResult, error) {
 	return res, err
 }
 func (a *App) CrawlStatus() service.CrawlStatus { return a.svc.CrawlStatus() }
+
+// ImportNoticePost : 복지부 게시글 주소(또는 번호)로 지난 고시 하나 가져오기 (사용자가 요청할 때만)
+func (a *App) ImportNoticePost(link string) (*service.NoticePostResult, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, 3*time.Minute)
+	defer cancel()
+	return a.svc.ImportNoticePost(ctx, link)
+}
 
 // CheckStdCode : 표준코드 새 판 확인 (force=true: 오늘 확인했어도 다시)
 func (a *App) CheckStdCode(force bool) (*service.StdCodeResult, error) {
@@ -495,6 +508,20 @@ func (a *App) ListLots(code string) ([]service.LotView, error) { return a.svc.Li
 func (a *App) AddLot(in service.LotInput) (int64, error)       { return a.svc.AddLot(in) }
 func (a *App) DeleteLot(id int64) error                        { return a.svc.DeleteLot(id) }
 
+// ── 사입정보 사진 판독 (회차 4단계) ─────────────────────────────
+
+// ReadLotPhoto : 사입정보 사진 1장을 Windows 기본 OCR(무료·오프라인)로 판독한다 (저장하지 않음 — 화면에서 확인·수정한 뒤 SaveLotPhotoRows)
+func (a *App) ReadLotPhoto(req service.LotPhotoRequest) (*service.LotPhotoResult, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
+	defer cancel()
+	return a.svc.ReadLotPhoto(ctx, req)
+}
+func (a *App) SaveLotPhotoRows(rows []service.LotInput) (int, error) { return a.svc.AddLots(rows) }
+func (a *App) UpdateLot(id int64, in service.LotInput) error         { return a.svc.UpdateLot(id, in) }
+func (a *App) ListLotEvidence(codes []string) ([]service.LotEvidenceView, error) {
+	return a.svc.ListLotEvidence(codes)
+}
+
 // ── 처리 결과 · 리포트 ────────────────────────────────────────────
 
 func (a *App) ConfirmDecision(eff, code string) (int, error) { return a.svc.ConfirmDecision(eff, code) }
@@ -502,6 +529,9 @@ func (a *App) ListSettlements(f service.SettlementFilter) ([]service.SettlementV
 	return a.svc.ListSettlements(f)
 }
 func (a *App) UpdateSettlement(in service.SettlementInput) error { return a.svc.UpdateSettlement(in) }
+func (a *App) FinishPhysical(eff, code string, supplierID int64) (*service.SettlementView, error) {
+	return a.svc.FinishPhysical(eff, code, supplierID)
+}
 func (a *App) SetSettlementStatus(id int64, status string) error {
 	return a.svc.SetSettlementStatus(id, status)
 }

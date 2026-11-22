@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,11 +67,28 @@ func carriedNote(n int) string {
 // 새 목록에 없는 품목이라도 약국 기록이 있으면 지우지 않는다 — 빠지면 단위 환산 기준이 사라져 재고 수량이 바뀐다
 // (예: 박스로 산 약이 30정 → 1정). 남긴 행은 in_list = 0 (옛 적용일 그대로) — '지금 급여목록'에서는 빠진다. carried = 남긴 수.
 func (s *Service) storeDrugMaster(name, sha, listDate string, recs []ingest.MasterRec, issues int) (batchID int64, n, carried int, err error) {
+	batchID, n, carried, _, err = s.storeDrugMasterWith(name, sha, listDate, recs, issues, nil)
+	return
+}
+
+// codeChangeResult : 급여목록을 바꾸며 처리한 코드 변경
+type codeChangeResult struct {
+	Merged      int          // 약국 기록을 새 코드로 옮긴 품목
+	Review      []codeChange // 고시 단위가 달라 옮기지 않은 품목 (약국 기록 있음)
+	BothAnchors []codeChange // 두 코드 모두 재고 기준점이 있던 품목 (재고 확인 필요)
+}
+
+// storeDrugMasterWith : storeDrugMaster + 코드 변경(옛 코드의 약국 기록을 새 코드로 옮김)을 한 트랜잭션에서.
+// 옮기기를 먼저 해야 옛 코드가 '약국 기록 있는 빠진 품목'으로 남지 않는다.
+func (s *Service) storeDrugMasterWith(name, sha, listDate string, recs []ingest.MasterRec, issues int, changes []codeChange) (batchID int64, n, carried int, cr codeChangeResult, err error) {
 	codes := map[string]bool{}
 	err = s.DB.Tx(nilCtx(), func(tx *sql.Tx) error {
 		var err error
-		batchID, err = insertBatch(tx, "drug_master", name, sha, listDate, listDate, len(recs), map[string]any{"issues": issues})
+		batchID, err = insertBatch(tx, "drug_master", name, sha, listDate, listDate, len(recs), map[string]any{"issues": issues, "code_changes": len(changes)})
 		if err != nil {
+			return err
+		}
+		if cr.Merged, cr.Review, cr.BothAnchors, err = recordCodeChanges(tx, changes); err != nil {
 			return err
 		}
 		if _, err := tx.Exec("DELETE FROM drug_master WHERE code NOT IN (" + sqlUsedCodes + ")"); err != nil {
@@ -111,13 +129,47 @@ func (s *Service) storeDrugMaster(name, sha, listDate string, recs []ingest.Mast
 		return recomputeUnits(tx, nil)
 	})
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, codeChangeResult{}, err
 	}
 	if carried > 0 {
 		s.Log.Info("급여목록에서 빠졌지만 약국 기록이 있어 남긴 품목", "count", carried)
 	}
+	if cr.Merged > 0 || len(cr.Review) > 0 {
+		s.Log.Info("제품코드 변경", "merged", cr.Merged, "review", len(cr.Review), "both_anchors", len(cr.BothAnchors))
+	}
 	s.rematchUnresolved()
-	return batchID, len(codes), carried, nil
+	return batchID, len(codes), carried, cr, nil
+}
+
+// codeChangeNote : 코드 변경 결과 안내 (없으면 "")
+func codeChangeNote(cr codeChangeResult) string {
+	var b strings.Builder
+	if cr.Merged > 0 {
+		fmt.Fprintf(&b, " 제품코드가 바뀐 %s품목은 약국 기록을 새 코드로 옮겼습니다.", comma(cr.Merged))
+	}
+	if len(cr.BothAnchors) > 0 {
+		fmt.Fprintf(&b, " 그중 %s품목은 옛 코드와 새 코드 모두 재고 기준점이 있어 재고를 확인해 주세요 (%s).", comma(len(cr.BothAnchors)), codePairs(cr.BothAnchors))
+	}
+	if len(cr.Review) > 0 {
+		fmt.Fprintf(&b, " 제품코드가 바뀌었지만 고시 단위가 달라 옮기지 않은 품목 %s개가 있습니다 — 직접 확인해 주세요 (%s).", comma(len(cr.Review)), codePairs(cr.Review))
+	}
+	return b.String()
+}
+
+func codePairs(cs []codeChange) string {
+	var parts []string
+	for i, c := range cs {
+		if i == 5 {
+			parts = append(parts, fmt.Sprintf("외 %d개", len(cs)-5))
+			break
+		}
+		p := c.Old + "→" + c.New
+		if c.OldUnit != c.NewUnit {
+			p += fmt.Sprintf(" [%s→%s]", c.OldUnit, c.NewUnit)
+		}
+		parts = append(parts, p)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // ── 약제급여목록 자동 받기 (공공데이터포털 약가기준정보조회서비스) ──────
@@ -138,14 +190,28 @@ const (
 	setMasterFailNotified = "master_fail_noticed" // 실패 알림을 보냈는가 (장애마다 한 번)
 )
 
+// dgamtPick : 제품코드별로 고른 약가기준정보 행
+type dgamtPick struct {
+	rec ingest.MasterRec
+	eff string
+	chg string // 변경이후약품코드 (자기 코드면 "")
+}
+
+// dgamtMaster : 약가기준정보를 급여목록으로 바꾼 결과
+type dgamtMaster struct {
+	Recs     []ingest.MasterRec // 지금 급여목록 ('삭제' 품목 뺌)
+	ListDate string
+	Changes  []codeChange // 코드 변경 (옛 코드 → 새 코드)
+	Removed  int          // 급여 중단으로 뺀 품목 수
+}
+
 // masterFromDgamt : 약가기준정보 → 급여목록 행. 같은 제품코드가 여러 번이면 오늘 적용 중인 것(오늘 이전 적용일 중 가장 늦은 것),
 // 아직 시행 전인 것뿐이면 가장 이른 것. listDate = 오늘 이전 적용일 중 가장 늦은 날.
-func masterFromDgamt(items []crawler.DgamtItem, today string) ([]ingest.MasterRec, string) {
-	type pick struct {
-		rec ingest.MasterRec
-		eff string
-	}
+// 지금 행이 '삭제'인 품목은 급여목록에서 빼고, 변경이후약품코드가 있으면 코드 변경으로 돌려준다.
+func masterFromDgamt(items []crawler.DgamtItem, today string) dgamtMaster {
+	type pick = dgamtPick
 	best := map[string]pick{}
+	beforeOf := map[string]string{} // 새 코드 → 변경이전코드 (새 코드 행의 chgBfMdsCd)
 	var order []string
 	listDate := ""
 	for _, it := range items {
@@ -153,11 +219,18 @@ func masterFromDgamt(items []crawler.DgamtItem, today string) ([]ingest.MasterRe
 		if !domain.IsEDICode(code) {
 			continue
 		}
+		if bf := domain.NormalizeProductCode(it.ChgBfMdsCd); domain.IsEDICode(bf) && bf != code {
+			beforeOf[bf] = code
+		}
 		eff, _ := domain.ParseFlexibleDate(it.AdtStaDd)
 		price, _ := ingest.ParseNumber(it.MxCprc)
 		rec := ingest.MasterRec{Code: code, Name: strings.TrimSpace(it.ItmNm), Company: strings.TrimSpace(it.MnfEntpNm), Spec: strings.TrimSpace(it.NomNm),
 			Unit: strings.TrimSpace(it.Unit), Price: price, Route: strings.TrimSpace(it.InjcPthNm), IngredientCode: strings.TrimSpace(it.GnlNmCd),
 			OTC: strings.TrimSpace(it.SpcGnlTpNm), Note: strings.TrimSpace(it.PayTpNm)}
+		chg := domain.NormalizeProductCode(it.ChgAfMdsCd)
+		if !domain.IsEDICode(chg) || chg == code {
+			chg = ""
+		}
 		if eff != "" && eff <= today && eff > listDate {
 			listDate = eff
 		}
@@ -165,21 +238,33 @@ func masterFromDgamt(items []crawler.DgamtItem, today string) ([]ingest.MasterRe
 		switch {
 		case !ok:
 			order = append(order, code)
-			best[code] = pick{rec, eff}
+			best[code] = pick{rec, eff, chg}
 		case eff <= today && (cur.eff > today || eff > cur.eff): // 적용 중인 것 중 가장 늦은 것
-			best[code] = pick{rec, eff}
+			best[code] = pick{rec, eff, chg}
 		case eff > today && cur.eff > today && eff < cur.eff: // 둘 다 시행 전이면 가장 이른 것
-			best[code] = pick{rec, eff}
+			best[code] = pick{rec, eff, chg}
 		}
 	}
-	out := make([]ingest.MasterRec, 0, len(order))
+	after := map[string]string{}
+	for c, p := range best {
+		if p.chg != "" {
+			after[c] = p.chg
+		}
+	}
+	res := dgamtMaster{ListDate: listDate, Changes: resolveCodeChanges(best, after, beforeOf)}
+	sort.Slice(res.Changes, func(a, b int) bool { return res.Changes[a].Old < res.Changes[b].Old })
+	res.Recs = make([]ingest.MasterRec, 0, len(order))
 	for _, c := range order {
-		out = append(out, best[c].rec)
+		if payDeleted(best[c].rec.Note) {
+			continue
+		}
+		res.Recs = append(res.Recs, best[c].rec)
 	}
-	if listDate == "" {
-		listDate = today
+	res.Removed = len(order) - len(res.Recs) - len(res.Changes)
+	if res.ListDate == "" {
+		res.ListDate = today
 	}
-	return out, listDate
+	return res
 }
 
 func masterSHA(recs []ingest.MasterRec) string {
@@ -248,7 +333,8 @@ func (s *Service) CheckDrugMaster(ctx context.Context, force bool) (*MasterResul
 	if err != nil {
 		return fail(err)
 	}
-	recs, listDate := masterFromDgamt(items, today)
+	dm := masterFromDgamt(items, today)
+	recs, listDate := dm.Recs, dm.ListDate
 	if len(recs) < 1000 { // 한 달 목록은 2만 품목 넘게 — 이상하게 적으면 바꾸지 않는다
 		return fail(fmt.Errorf("%w: 약제급여목록이 이상하게 적습니다 (%d품목)", errMasterRefused, len(recs)))
 	}
@@ -275,7 +361,7 @@ func (s *Service) CheckDrugMaster(ctx context.Context, force bool) (*MasterResul
 	if why != "" {
 		return fail(fmt.Errorf("%w: %s", errMasterRefused, why))
 	}
-	sha := shaHex([]byte(masterSHA(recs) + "|" + listDate)) // 내용이 같아도 새 달 목록이면 적용일을 바꿔 둔다
+	sha := shaHex([]byte(masterSHA(recs) + "|" + listDate + "|" + strconv.Itoa(len(dm.Changes)))) // 내용이 같아도 새 달 목록이면 적용일을 바꿔 둔다
 	var lastSHA string
 	_ = s.DB.QueryRow("SELECT sha256 FROM import_batch WHERE kind = 'drug_master' ORDER BY id DESC LIMIT 1").Scan(&lastSHA)
 	if lastSHA == sha {
@@ -284,12 +370,16 @@ func (s *Service) CheckDrugMaster(ctx context.Context, force bool) (*MasterResul
 		s.finishJob(job, "ok", msg)
 		return &MasterResult{Count: len(recs), ListDate: listDate, Message: msg}, nil
 	}
-	_, n, carried, err := s.storeDrugMaster("공공데이터포털 약가기준정보 ("+listDate+")", sha, listDate, recs, 0)
+	_, n, carried, cr, err := s.storeDrugMasterWith("공공데이터포털 약가기준정보 ("+listDate+")", sha, listDate, recs, 0, dm.Changes)
 	if err != nil {
 		return fail(err)
 	}
 	done()
-	msg := fmt.Sprintf("약제급여목록 %s품목을 새로 받았습니다 (적용일 %s). 단위 환산을 다시 계산했습니다.", comma(n), listDate) + carriedNote(carried)
+	msg := fmt.Sprintf("약제급여목록 %s품목을 새로 받았습니다 (적용일 %s, 급여 중단 %s품목 제외). 단위 환산을 다시 계산했습니다.", comma(n), listDate, comma(dm.Removed)) +
+		carriedNote(carried) + codeChangeNote(cr)
+	if len(cr.Review) > 0 || len(cr.BothAnchors) > 0 {
+		s.notify("warn", "제품코드 변경 확인 필요", strings.TrimSpace(codeChangeNote(cr)), "inventory")
+	}
 	s.finishJob(job, "ok", msg)
 	s.notify("info", "약제급여목록 갱신", msg, "imports")
 	s.Log.Info("약제급여목록 받음", "count", n, "list_date", listDate)
@@ -384,6 +474,8 @@ func (s *Service) VerifyDataGoKey(ctx context.Context, key string) KeyCheck {
 	c.Retries = 1
 	total, err := c.CheckDgamtKey(ctx, key)
 	switch {
+	case err == nil && total <= 0: // 키는 받아들여졌지만 목록이 비었다 — 받기도 '전체 품목 수를 알 수 없음'으로 실패한다
+		return KeyCheck{Message: "인증키는 받아들여졌지만 공공데이터포털이 약가기준정보를 0품목으로 알려 왔습니다 — 포털 API 사용법이 바뀌었을 수 있습니다. 설정 → 오류 보고로 알려 주세요."}
 	case err == nil:
 		return KeyCheck{OK: true, Total: total, Message: fmt.Sprintf("인증키가 확인되었습니다 — 약제급여목록 %s품목을 받을 수 있습니다", comma(total))}
 	case errors.Is(err, crawler.ErrDgamtKeyNotReady):

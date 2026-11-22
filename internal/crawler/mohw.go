@@ -17,6 +17,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -203,16 +204,81 @@ func ParseAttachments(page []byte, base string) ([]Attachment, error) {
 }
 
 func (c *Client) FetchAttachments(ctx context.Context, link string) ([]Attachment, error) {
+	atts, _, err := c.FetchPost(ctx, link)
+	return atts, err
+}
+
+// FetchPost 는 게시글 상세 페이지 1번으로 첨부 목록과 작성일(YYYY-MM-DD, 못 읽으면 "")을 돌려준다.
+func (c *Client) FetchPost(ctx context.Context, link string) ([]Attachment, string, error) {
 	resp, err := c.get(ctx, link)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 	page, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return ParseAttachments(page, c.Base)
+	atts, err := ParseAttachments(page, c.Base)
+	return atts, ParsePostDate(page), err
+}
+
+var (
+	rePostTag  = regexp.MustCompile(`<[^>]+>`)
+	rePostDate = regexp.MustCompile(`작성일\s*[:：]?\s*(20\d{2})[-.](\d{2})[-.](\d{2})`)
+)
+
+// ParsePostDate : 게시글 상세 HTML 의 '작성일 2025-11-25' (없으면 "")
+func ParsePostDate(page []byte) string {
+	text := rePostTag.ReplaceAllString(string(page), " ")
+	if m := rePostDate.FindStringSubmatch(text); m != nil {
+		return m[1] + "-" + m[2] + "-" + m[3]
+	}
+	return ""
+}
+
+// 고시를 받는 게시판 (훈령/예규/고시/지침)
+const (
+	noticeBoardMid = "a10409020000"
+	noticeBoardBid = "0026"
+)
+
+var reListNo = regexp.MustCompile(`^\d{4,12}$`)
+
+// NoticePostLink 는 사용자가 넣은 게시글 주소(또는 게시글 번호)를 확인해 게시글 번호와 상세 페이지 주소를 돌려준다.
+// 복지부 훈령/예규/고시/지침 게시판의 글만 받는다 — 다른 사이트·게시판 주소로 요청하지 않게.
+func NoticePostLink(base, raw string) (listNo, link string, err error) {
+	raw = strings.TrimSpace(raw)
+	if reListNo.MatchString(raw) {
+		listNo = raw
+	} else {
+		u, perr := url.Parse(raw)
+		if perr != nil || u.Host == "" {
+			return "", "", errors.New("복지부 게시글 주소(https://www.mohw.go.kr/board.es?…list_no=…)나 게시글 번호를 넣어 주세요")
+		}
+		if h := strings.ToLower(u.Hostname()); h != "www.mohw.go.kr" && h != "mohw.go.kr" {
+			return "", "", errors.New("보건복지부(www.mohw.go.kr) 게시글 주소만 넣을 수 있습니다")
+		}
+		q := u.Query()
+		if q.Get("mid") != noticeBoardMid || q.Get("bid") != noticeBoardBid {
+			return "", "", errors.New("보건복지부 '훈령/예규/고시/지침' 게시판의 글 주소가 아닙니다")
+		}
+		listNo = q.Get("list_no")
+		if !reListNo.MatchString(listNo) {
+			return "", "", errors.New("주소에 게시글 번호(list_no)가 없습니다")
+		}
+	}
+	link = strings.TrimRight(base, "/") + "/board.es?mid=" + noticeBoardMid + "&bid=" + noticeBoardBid + "&list_no=" + listNo + "&act=view"
+	return listNo, link, nil
+}
+
+// NoticeTitleFromFile : 첨부 파일 이름에서 고시 제목 ('…일부개정고시(2025-188호)_별표1 목록표.xlsx' → '…일부개정고시(2025-188호)')
+func NoticeTitleFromFile(name string) string {
+	name = strings.TrimSuffix(strings.TrimSuffix(name, ".xlsx"), ".XLSX")
+	if i := strings.Index(name, "_별표"); i > 0 {
+		name = name[:i]
+	}
+	return strings.TrimSpace(name)
 }
 
 // Download 는 첨부 파일을 받는다. 파일명은 Content-Disposition 에서 읽는다.

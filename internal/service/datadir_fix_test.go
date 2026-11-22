@@ -3,6 +3,7 @@ package service
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -136,8 +137,8 @@ func TestCheckFolderRejectsNetwork(t *testing.T) {
 
 // 백업 폴더를 확인할 수 없으면(드라이브 빠짐·권한) 이름 고르기를 계속 돌지 않고 실패한다
 func TestBackupStatErrorDoesNotSpin(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("root 는 권한 검사를 건너뛴다")
+	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+		t.Skip("Windows·root 에서는 chmod 로 권한 오류를 만들 수 없다")
 	}
 	s, err := NewTemp(t.TempDir())
 	if err != nil {

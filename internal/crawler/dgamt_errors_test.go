@@ -77,7 +77,7 @@ func TestDgamtErrorEnvelopes(t *testing.T) {
 
 // 마지막 쪽이 비어 온 경우(전체 수보다 적게 받음) — 끊긴 목록을 받아들이지 않는다 (예전에는 95% 면 통과)
 func TestDgamtPartialRejected(t *testing.T) {
-	const total = 2200
+	const total = 22000 // 쪽당 1만 개 → 3쪽
 	for _, emptyPage := range []int{3, 2} {
 		c := withDgamt(t, func(w http.ResponseWriter, r *http.Request) {
 			page, _ := strconv.Atoi(r.URL.Query().Get("pageNo"))

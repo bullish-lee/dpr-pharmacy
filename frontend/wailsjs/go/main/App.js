@@ -38,6 +38,10 @@ export function CheckFolder(arg1) {
   return window['go']['main']['App']['CheckFolder'](arg1);
 }
 
+export function CheckProductCode(arg1) {
+  return window['go']['main']['App']['CheckProductCode'](arg1);
+}
+
 export function CheckStdCode(arg1) {
   return window['go']['main']['App']['CheckStdCode'](arg1);
 }
@@ -114,6 +118,10 @@ export function ExportReportCSV(arg1) {
   return window['go']['main']['App']['ExportReportCSV'](arg1);
 }
 
+export function FinishPhysical(arg1, arg2, arg3) {
+  return window['go']['main']['App']['FinishPhysical'](arg1, arg2, arg3);
+}
+
 export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
@@ -128,6 +136,10 @@ export function Import(arg1) {
 
 export function ImportKinds() {
   return window['go']['main']['App']['ImportKinds']();
+}
+
+export function ImportNoticePost(arg1) {
+  return window['go']['main']['App']['ImportNoticePost'](arg1);
 }
 
 export function ImportSchema(arg1) {
@@ -148,6 +160,10 @@ export function JobRuns() {
 
 export function ListImports() {
   return window['go']['main']['App']['ListImports']();
+}
+
+export function ListLotEvidence(arg1) {
+  return window['go']['main']['App']['ListLotEvidence'](arg1);
 }
 
 export function ListLots(arg1) {
@@ -262,6 +278,10 @@ export function ReadLogs(arg1, arg2, arg3) {
   return window['go']['main']['App']['ReadLogs'](arg1, arg2, arg3);
 }
 
+export function ReadLotPhoto(arg1) {
+  return window['go']['main']['App']['ReadLotPhoto'](arg1);
+}
+
 export function RecordScan(arg1) {
   return window['go']['main']['App']['RecordScan'](arg1);
 }
@@ -282,6 +302,10 @@ export function ResolveUnresolved(arg1, arg2) {
   return window['go']['main']['App']['ResolveUnresolved'](arg1, arg2);
 }
 
+export function ResolveUnresolvedByCode(arg1, arg2) {
+  return window['go']['main']['App']['ResolveUnresolvedByCode'](arg1, arg2);
+}
+
 export function RestoreSupplier(arg1) {
   return window['go']['main']['App']['RestoreSupplier'](arg1);
 }
@@ -292,6 +316,10 @@ export function RunCrawl() {
 
 export function SaveCount(arg1) {
   return window['go']['main']['App']['SaveCount'](arg1);
+}
+
+export function SaveLotPhotoRows(arg1) {
+  return window['go']['main']['App']['SaveLotPhotoRows'](arg1);
 }
 
 export function SaveRules(arg1) {
@@ -360,6 +388,10 @@ export function UnackHealth(arg1, arg2, arg3) {
 
 export function UnitOptions(arg1) {
   return window['go']['main']['App']['UnitOptions'](arg1);
+}
+
+export function UpdateLot(arg1, arg2) {
+  return window['go']['main']['App']['UpdateLot'](arg1, arg2);
 }
 
 export function UpdateSettlement(arg1) {

@@ -2,7 +2,7 @@ package crawler
 
 // 약제급여목록(전체) 자동 받기 — 공공데이터포털 「건강보험심사평가원_약가기준정보조회서비스」(#15054445, 무료, 인증키 필요).
 //
-//	GET https://apis.data.go.kr/B551182/dgamtCrtrInfoService1.2/getDgamtList?ServiceKey=…&numOfRows=…&pageNo=…
+//	GET https://apis.data.go.kr/B551182/dgamtCrtrInfoService1.2/getDgamtList?ServiceKey=…&itmNm=%25&numOfRows=…&pageNo=…
 //	응답(XML): response/header/resultCode(00=정상) · body/items/item[] · body/totalCount
 //	인증 오류: HTTP 401 + OpenAPI_ServiceResponse/cmmMsgHeader/errMsg (SERVICE_KEY_IS_NULL 등)
 //
@@ -23,6 +23,9 @@ import (
 
 // DgamtURL : 약가목록조회 주소 (테스트에서 바꾼다)
 var DgamtURL = "https://apis.data.go.kr/B551182/dgamtCrtrInfoService1.2/getDgamtList"
+
+// DgamtAllItems : 전체 목록을 받을 때 품목명(itmNm) 조건 — 조건 없이 부르면 0건이 온다
+const DgamtAllItems = "%"
 
 // DgamtItem : 약가기준정보 한 품목 (응답 항목 이름 그대로)
 type DgamtItem struct {
@@ -128,7 +131,9 @@ func dgamtError(fields ...string) error {
 
 // fetchDgamtPage : 한 쪽을 받는다. 오류 문장에 주소(인증키 포함)를 넣지 않는다.
 func (c *Client) fetchDgamtPage(ctx context.Context, key string, page, rows int) (*dgamtPage, error) {
-	q := url.Values{"ServiceKey": {key}, "numOfRows": {strconv.Itoa(rows)}, "pageNo": {strconv.Itoa(page)}}
+	// 포털은 검색 조건이 하나도 없으면 resultCode 00 + totalCount 0 을 돌려준다 (2026-11 확인).
+	// 품목명에 '%'(LIKE '모두 일치')를 넣으면 전체(삭제·이력 포함 약 9만 4천 행)가 온다.
+	q := url.Values{"ServiceKey": {key}, "itmNm": {DgamtAllItems}, "numOfRows": {strconv.Itoa(rows)}, "pageNo": {strconv.Itoa(page)}}
 	var lastErr error
 	for attempt := 0; attempt < max(1, c.Retries); attempt++ {
 		if attempt > 0 {
@@ -187,14 +192,16 @@ func (c *Client) fetchDgamtPage(ctx context.Context, key string, page, rows int)
 	return nil, lastErr
 }
 
-// FetchDgamtAll 은 약가기준정보 전체 목록을 쪽마다 받는다 (약 2만 2천 품목, 쪽당 1000개 → 20여 번 요청).
+// FetchDgamtAll 은 약가기준정보 전체 목록을 쪽마다 받는다 (삭제·이력 포함 약 9만 4천 행, 쪽당 1만 개 → 10번 남짓 요청).
 // progress 는 (받은 수, 전체 수) — nil 이면 쓰지 않는다.
 func (c *Client) FetchDgamtAll(ctx context.Context, key string, progress func(got, total int)) ([]DgamtItem, error) {
 	key = NormalizeServiceKey(key)
 	if key == "" {
 		return nil, fmt.Errorf("%w: 인증키가 없습니다", ErrDgamtKey)
 	}
-	const rows = 1000
+	// 쪽당 1만 품목: 포털 응답 시간은 요청 수에 좌우된다 (2026-11 실측: 1천 행 약 10초, 1만 행 약 11초·4MB).
+	// 1천 행씩이면 전체(약 9만 4천 행)에 95번·8분, 1만 행씩이면 10번·2분 남짓.
+	const rows = 10000
 	var out []DgamtItem
 	total := -1
 	for page := 1; page <= 1000; page++ { // 포털이 쪽당 행 수를 줄여 보내도 전체를 다 받게 넉넉히

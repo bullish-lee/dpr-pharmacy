@@ -1,10 +1,10 @@
-import { Download } from 'lucide-react'
+import { Download, Pencil } from 'lucide-react'
 import { useState } from 'react'
 import { api, obj, useAction, useReport, useSuppliers, type service } from '../../app/api'
 import { dateDot, dateTime, price, qty, won } from '../../app/format'
 import { navigate, paths, useRoute } from '../../app/router'
 import { DataTable } from '../../components/DataTable'
-import { Button, Empty, ErrorBox, Field, Input, Kpi, PageHeader, Segmented, Select, Skeleton } from '../../components/ui'
+import { Button, Dialog, Empty, ErrorBox, Field, Input, Kpi, PageHeader, Segmented, Select, Skeleton } from '../../components/ui'
 import { MethodBadge } from '../cuts/shared'
 
 type View = 'date' | 'supplier' | 'product' | 'rows'
@@ -16,6 +16,7 @@ export function ReportsPage() {
   const rep = useReport(f)
   const sups = useSuppliers(true)
   const setStatus = useAction((id: number, st: string) => api.SetSettlementStatus(id, st))
+  const [editing, setEditing] = useState<service.SettlementView | null>(null)
   const exp = useAction(() => api.ExportReportCSV(obj<service.SettlementFilter>(f)), { success: (p) => (p ? `저장했습니다: ${p}` : '') })
 
   return (
@@ -117,6 +118,24 @@ export function ReportsPage() {
                   ),
                 },
                 { key: 'done', header: '완료 시각', width: '140px', render: (r) => <span className="num text-gray-600">{dateTime(r.doneAt)}</span> },
+                {
+                  key: 'edit',
+                  header: '',
+                  width: '44px',
+                  render: (r) => (
+                    <button
+                      className="text-gray-400 hover:text-gray-800"
+                      title="실제 수량·금액 고치기"
+                      aria-label="실제 수량·금액 고치기"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setEditing(r)
+                      }}
+                    >
+                      <Pencil className="size-4" />
+                    </button>
+                  ),
+                },
               ]}
               defaultSort={{ key: 'eff', dir: 'desc' }}
             />
@@ -138,6 +157,68 @@ export function ReportsPage() {
           )}
         </>
       )}
+      <SettlementEdit row={editing} onClose={() => setEditing(null)} />
     </div>
+  )
+}
+
+/** 처리 내역 한 건의 실제 결과 고치기 — 도매가 인정한 수량·금액이 프로그램 계산과 다를 때 */
+function SettlementEdit({ row, onClose }: { row: service.SettlementView | null; onClose: () => void }) {
+  const [q, setQ] = useState('')
+  const [amount, setAmount] = useState('')
+  const [memo, setMemo] = useState('')
+  const [id, setId] = useState(0)
+  if (row && row.id !== id) {
+    setId(row.id)
+    setQ(String(row.qty))
+    setAmount(String(Math.round(row.amount)))
+    setMemo(row.memo ?? '')
+  }
+  const save = useAction(
+    (recalc: boolean) =>
+      api.UpdateSettlement(obj<service.SettlementInput>({ id: row!.id, method: row!.method, qty: Number(q), amount: Number(amount), recalc, status: row!.status, memo })),
+    { success: '처리 내역을 고쳤습니다' },
+  )
+  const bad = q.trim() === '' || !(Number(q) >= 0) || amount.trim() === '' || !(Number(amount) >= 0)
+  const close = () => {
+    setId(0)
+    onClose()
+  }
+  return (
+    <Dialog
+      open={!!row}
+      onClose={close}
+      title="실제 수량·금액 고치기"
+      footer={
+        <>
+          <Button onClick={close}>닫기</Button>
+          <Button disabled={q.trim() === '' || !(Number(q) >= 0)} loading={save.isPending} onClick={() => save.mutateAsync([true]).then(close).catch(() => undefined)}>
+            수량 × 인하폭으로 다시 계산
+          </Button>
+          <Button variant="primary" disabled={bad} loading={save.isPending} onClick={() => save.mutateAsync([false]).then(close).catch(() => undefined)}>
+            저장
+          </Button>
+        </>
+      }
+    >
+      {row && (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-700">
+            <b>{row.name}</b> · {row.supplierName} · 시행 {dateDot(row.effectiveDate)} · 1단위 인하폭 {price(row.unitDelta)}원
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="실제 수량" help="도매가 인정한 수량 (고시 단위)">
+              <Input inputMode="decimal" value={q} onChange={(e) => setQ(e.target.value)} />
+            </Field>
+            <Field label="실제 보상액 (원)" help="받지 못했으면 0">
+              <Input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="메모">
+            <Input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="예: 일부만 인정, 다음 달 원장에 반영" />
+          </Field>
+        </div>
+      )}
+    </Dialog>
   )
 }

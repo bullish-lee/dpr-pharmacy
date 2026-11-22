@@ -24,6 +24,8 @@ export function CheckDrugMaster(arg1:boolean):Promise<service.MasterResult>;
 
 export function CheckFolder(arg1:string):Promise<service.FolderCheck>;
 
+export function CheckProductCode(arg1:string):Promise<service.ProductCodeInfo>;
+
 export function CheckStdCode(arg1:boolean):Promise<service.StdCodeResult>;
 
 export function CheckUpdate(arg1:boolean):Promise<service.UpdateInfo>;
@@ -62,6 +64,8 @@ export function DrugInfo(arg1:string):Promise<service.DrugDetail>;
 
 export function ExportReportCSV(arg1:service.SettlementFilter):Promise<string>;
 
+export function FinishPhysical(arg1:string,arg2:string,arg3:number):Promise<service.SettlementView>;
+
 export function GetSettings():Promise<service.Settings>;
 
 export function HeldDeletions(arg1:string):Promise<Array<service.DeletionRow>>;
@@ -69,6 +73,8 @@ export function HeldDeletions(arg1:string):Promise<Array<service.DeletionRow>>;
 export function Import(arg1:service.ImportRequest):Promise<service.ImportResult>;
 
 export function ImportKinds():Promise<Array<main.ImportKind>>;
+
+export function ImportNoticePost(arg1:string):Promise<service.NoticePostResult>;
 
 export function ImportSchema(arg1:string):Promise<ingest.Schema>;
 
@@ -79,6 +85,8 @@ export function Inventory(arg1:string,arg2:boolean):Promise<service.InventoryVie
 export function JobRuns():Promise<Array<service.JobRun>>;
 
 export function ListImports():Promise<Array<service.BatchView>>;
+
+export function ListLotEvidence(arg1:Array<string>):Promise<Array<service.LotEvidenceView>>;
 
 export function ListLots(arg1:string):Promise<Array<service.LotView>>;
 
@@ -136,6 +144,8 @@ export function Ranking(arg1:string,arg2:boolean):Promise<service.Ranking>;
 
 export function ReadLogs(arg1:string,arg2:number,arg3:string):Promise<Array<applog.Line>>;
 
+export function ReadLotPhoto(arg1:service.LotPhotoRequest):Promise<service.LotPhotoResult>;
+
 export function RecordScan(arg1:service.ScanInput):Promise<service.ScanResult>;
 
 export function RemoveWindowsTasks():Promise<void>;
@@ -146,11 +156,15 @@ export function ResolveScan(arg1:number,arg2:number):Promise<void>;
 
 export function ResolveUnresolved(arg1:number,arg2:string):Promise<void>;
 
+export function ResolveUnresolvedByCode(arg1:number,arg2:string):Promise<void>;
+
 export function RestoreSupplier(arg1:number):Promise<void>;
 
 export function RunCrawl():Promise<service.CrawlResult>;
 
 export function SaveCount(arg1:service.CountInput):Promise<number>;
+
+export function SaveLotPhotoRows(arg1:Array<service.LotInput>):Promise<number>;
 
 export function SaveRules(arg1:Array<service.RuleInput>):Promise<void>;
 
@@ -185,6 +199,8 @@ export function SubmitReport(arg1:string):Promise<service.ReportResult>;
 export function UnackHealth(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function UnitOptions(arg1:string):Promise<Array<service.UnitOption>>;
+
+export function UpdateLot(arg1:number,arg2:service.LotInput):Promise<void>;
 
 export function UpdateSettlement(arg1:service.SettlementInput):Promise<void>;
 

@@ -184,6 +184,57 @@ func (s *Service) SetSettlementStatus(id int64, status string) error {
 	return err
 }
 
+// FinishPhysical 은 도매 앱 등록을 마친 실물보상을 '완료'로 기록한다 (등록 화면의 [처리 완료로 기록]).
+// 수량은 **도매 앱에 등록했다고 표시한 바코드의 수량**이다 — 판정 화면의 보유량에는 아직 안 찍은 재고의 추정분이 섞일 수 있어,
+// 그 값으로 완료를 기록하면 등록하지 않은 수량까지 보상받은 것으로 남는다. 금액 = 등록 수량 × 인하폭.
+func (s *Service) FinishPhysical(eff, code string, supplierID int64) (*SettlementView, error) {
+	var regQty int64
+	var regUnits int
+	if err := s.DB.QueryRow(`SELECT IFNULL(SUM(qty), 0), COUNT(*) FROM scan_unit WHERE effective_date = ? AND product_code = ? AND supplier_id = ? AND registered = 1`,
+		eff, code, supplierID).Scan(&regQty, &regUnits); err != nil {
+		return nil, err
+	}
+	if regUnits == 0 {
+		return nil, errors.New("도매 앱에 등록했다고 표시한 바코드가 없습니다 — 등록한 포장에 '스캔완료'를 표시한 뒤 기록하세요")
+	}
+	d, err := s.ProductDetail(eff, code)
+	if err != nil {
+		return nil, err
+	}
+	var pos *PositionView
+	for i := range d.Positions {
+		if d.Positions[i].SupplierID == supplierID {
+			pos = &d.Positions[i]
+		}
+	}
+	if pos == nil || pos.Rule == nil {
+		return nil, errors.New("이 도매는 보상 대상이 아닙니다")
+	}
+	qty := domain.Qty(regQty)
+	amount := float64(domain.RoundWon(qty.Float() * d.Row.Delta))
+	snap := toJSON(map[string]any{"rule": pos.Rule, "ruleText": pos.RuleText, "window": []string{pos.WindowFrom, pos.WindowTo},
+		"purchased": pos.Purchased, "returned": pos.Returned, "docQty": pos.DocQty, "held": pos.HeldUsed, "scanned": true,
+		"registeredUnits": regUnits, "registeredQty": qty})
+	now := store.Now()
+	if _, err := s.DB.Exec(`INSERT INTO settlement(effective_date, product_code, supplier_id, method, qty, unit_delta, amount, status, rule_snapshot, done_at, created_at, updated_at)
+		VALUES(?, ?, ?, 'physical', ?, ?, ?, 'done', ?, ?, ?, ?)
+		ON CONFLICT(effective_date, product_code, supplier_id) DO UPDATE SET method = 'physical', qty = excluded.qty, unit_delta = excluded.unit_delta,
+		  amount = excluded.amount, status = 'done', rule_snapshot = excluded.rule_snapshot, done_at = excluded.done_at, updated_at = excluded.updated_at`,
+		eff, code, supplierID, int64(qty), d.Row.Delta, amount, snap, now, now, now); err != nil {
+		return nil, err
+	}
+	list, err := s.ListSettlements(SettlementFilter{EffectiveDate: eff, Code: code})
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		if list[i].SupplierID == supplierID {
+			return &list[i], nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 func (s *Service) DeleteSettlement(id int64) error {
 	_, err := s.DB.Exec("DELETE FROM settlement WHERE id = ?", id)
 	return err

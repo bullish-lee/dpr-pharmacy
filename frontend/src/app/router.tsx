@@ -40,6 +40,7 @@ export const paths = {
   product: (date: string, code: string) => `/cuts/${date}/p/${code}`,
   scan: (date: string, code: string) => `/cuts/${date}/p/${code}/scan`,
   register: (date: string, code: string) => `/cuts/${date}/p/${code}/register`,
+  lotPhotos: (date: string) => `/cuts/${date}/lots`,
   notices: () => '/notices',
   notice: (id: number) => `/notices/${id}`,
   inventory: () => '/inventory',

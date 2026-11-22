@@ -13,6 +13,8 @@ permissions:
 
 jobs:
   windows-exe:
+    # 공개 저장소에서만 돈다 (비공개 개발 저장소에서는 건너뜀)
+    if: github.repository == 'bullish-lee/dpr-pharmacy'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

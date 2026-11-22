@@ -22,6 +22,10 @@ func fakeDgamt(t *testing.T, total int, wantKey string) *httptest.Server {
 		}
 		page, _ := strconv.Atoi(r.URL.Query().Get("pageNo"))
 		rows, _ := strconv.Atoi(r.URL.Query().Get("numOfRows"))
+		total := total
+		if r.URL.Query().Get("itmNm") != "%" { // 실제 포털처럼: 검색 조건이 없으면 정상 응답에 0건
+			total = 0
+		}
 		var b strings.Builder
 		fmt.Fprintf(&b, `<?xml version="1.0" encoding="UTF-8"?><response><header><resultCode>00</resultCode><resultMsg>NORMAL SERVICE.</resultMsg></header><body><items>`)
 		for i := (page - 1) * rows; i < page*rows && i < total; i++ {

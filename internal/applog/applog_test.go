@@ -3,6 +3,7 @@ package applog
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -92,6 +93,9 @@ func TestRotateFailureBacksOff(t *testing.T) {
 		if _, err := r.Write(chunk); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 에서는 chmod 로 폴더를 읽기 전용으로 만들 수 없다")
 	}
 	if err := os.Chmod(dir, 0o555); err != nil { // 폴더를 읽기 전용으로 → 이름 바꾸기 실패
 		t.Fatal(err)

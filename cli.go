@@ -19,6 +19,7 @@ const cliUsage = `DPR 급여약품 관리 — 명령줄 사용법
        -baseline 2026-02-02   초기재고 기준일      -timing start|end   기준 시점(영업 전/후)
        -asof 2026-10-31       실사일               -product 987654320  사입 근거 대상 약품
        -force                 같은 기간 기록을 크게 줄이는 교체도 진행 (안전장치 무시)
+  DPR notice-post <게시글 주소|번호>          복지부 게시글 하나의 고시 목록표 가져오기 (지난 고시)
   DPR rank <시행일> [-all]                   손실 순위 출력 (기본: 보유 품목만)
   DPR backup                                 DB 백업
   DPR datadir [reset]                        데이터 폴더 위치 (reset: 옮긴 위치 기록을 지워 기본 위치로)
@@ -139,6 +140,20 @@ func runCLI(args []string) int {
 			}
 			fmt.Printf("  [%s %d행] %s\n", is.Sheet, is.Row, is.Message)
 		}
+		return 0
+	case "notice-post":
+		if len(args) < 2 {
+			fmt.Print(cliUsage)
+			return 1
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		res, err := svc.ImportNoticePost(ctx, args[1])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "고시 가져오기 실패:", err)
+			return 1
+		}
+		fmt.Println(res.Message)
 		return 0
 	case "rank":
 		fs := flag.NewFlagSet("rank", flag.ContinueOnError)

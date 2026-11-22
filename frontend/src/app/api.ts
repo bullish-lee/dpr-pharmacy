@@ -112,6 +112,10 @@ export const useScans = (date: string, code: string) =>
 export const useAnchors = (code: string) => useQuery({ queryKey: keys.anchors(code), queryFn: () => App.ProductAnchors(code), enabled: !!code })
 export const useProductSearch = (q: string) =>
   useQuery({ queryKey: keys.search(q), queryFn: () => App.SearchProducts(q), enabled: q.trim().length >= 1, placeholderData: (p) => p })
+/** 직접 입력한 보험코드 확인 (형식·프로그램이 아는 약인지). 숫자 8~9자리처럼 보일 때만 묻는다. */
+export const looksLikeEDICode = (q: string) => /^\d{8,9}$/.test(q.replace(/[\s-]/g, ''))
+export const useCodeCheck = (q: string) =>
+  useQuery({ queryKey: ['dpr', 'code-check', q], queryFn: () => App.CheckProductCode(q), enabled: looksLikeEDICode(q) })
 
 // ── 변경 (성공 시 관련 화면 전부 갱신) ───────────────────────────────
 

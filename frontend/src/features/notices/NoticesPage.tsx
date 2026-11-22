@@ -1,11 +1,11 @@
-import { ArrowLeft, ExternalLink, RefreshCw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Download, ExternalLink, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { api, obj, useAction, useNoticeChanges, useNotices, type service } from '../../app/api'
 import { dateDot, dateTime, detailLabel, kindLabel, pct, price, qty } from '../../app/format'
 import { Link, navigate, paths } from '../../app/router'
 import { DataTable } from '../../components/DataTable'
 import { FileDrop, fileToBase64 } from '../../components/FileDrop'
-import { Badge, Button, Callout, Card, Empty, ErrorBox, PageHeader, Segmented, Skeleton, Switch } from '../../components/ui'
+import { Badge, Button, Callout, Card, Empty, ErrorBox, Input, PageHeader, Segmented, Skeleton, Switch } from '../../components/ui'
 
 const statusBadge: Record<string, { label: string; tone: 'gray' | 'green' | 'amber' | 'red' | 'outline' }> = {
   parsed: { label: '분석 완료', tone: 'outline' },
@@ -23,6 +23,8 @@ export function NoticesPage() {
     async (f: File) => api.Import(obj<service.ImportRequest>({ kind: 'notice', fileName: f.name, dataBase64: await fileToBase64(f) })),
     { success: (r) => r.message },
   )
+  const [postLink, setPostLink] = useState('')
+  const fromPost = useAction((link: string) => api.ImportNoticePost(link), { success: (r) => r.message })
   if (isLoading) return <Skeleton rows={8} />
   if (error) return <ErrorBox error={error} onRetry={() => refetch()} />
   return (
@@ -80,6 +82,29 @@ export function NoticesPage() {
               onFiles={(f) => upload.mutate([f[0]])}
               disabled={upload.isPending}
             />
+          </Card>
+          <Card title="지난 고시 가져오기">
+            <form
+              className="space-y-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (!postLink.trim()) return
+                fromPost.mutate([postLink.trim()], {
+                  onSuccess: (r) => {
+                    setPostLink('')
+                    if (r.noticeId) navigate(paths.notice(r.noticeId))
+                  },
+                })
+              }}
+            >
+              <Input value={postLink} onChange={(e) => setPostLink(e.target.value)} placeholder="복지부 게시글 주소 또는 번호 (list_no)" aria-label="복지부 게시글 주소" />
+              <Button type="submit" size="sm" icon={<Download className="size-3.5" />} loading={fromPost.isPending} disabled={!postLink.trim()}>
+                가져오기
+              </Button>
+              <p className="text-xs text-gray-500">
+                자동 확인은 최근 게시글만 봅니다. 예전에 고시됐지만 시행일이 남은 인하(예: 제2025-188호의 2026.11.23. 시행분)는 그 게시글 주소를 넣어 가져오세요. 누를 때만 글 하나를 받습니다.
+              </p>
+            </form>
           </Card>
           {(data ?? []).some((n) => n.status === 'failed') && (
             <Callout tone="danger">

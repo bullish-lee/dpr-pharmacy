@@ -21,7 +21,8 @@ func TestMasterFromDgamtPicksCurrent(t *testing.T) {
 		{MdsCd: "600000020", ItmNm: "다라정", NomNm: "28", Unit: "정/팩", MxCprc: "6000", AdtStaDd: "20270201"},
 		{MdsCd: "코드아님", ItmNm: "x"},
 	}
-	recs, listDate := masterFromDgamt(items, "2026-11-18")
+	dm := masterFromDgamt(items, "2026-11-18")
+	recs, listDate := dm.Recs, dm.ListDate
 	if len(recs) != 2 || recs[0].Price != 900 || recs[1].Price != 6000 || listDate != "2026-11-01" {
 		t.Fatalf("%+v %s", recs, listDate)
 	}
@@ -39,6 +40,10 @@ func fakeMasterAPI(t *testing.T, total int, price func(i int) int) (*httptest.Se
 		}
 		page, _ := strconv.Atoi(r.URL.Query().Get("pageNo"))
 		rows, _ := strconv.Atoi(r.URL.Query().Get("numOfRows"))
+		total := total
+		if r.URL.Query().Get("itmNm") != "%" { // 실제 포털처럼: 검색 조건이 없으면 정상 응답에 0건
+			total = 0
+		}
 		var b strings.Builder
 		b.WriteString(`<response><header><resultCode>00</resultCode></header><body><items>`)
 		for i := (page - 1) * rows; i < page*rows && i < total; i++ {
@@ -138,6 +143,14 @@ func TestVerifyDataGoKey(t *testing.T) {
 	if k := s.VerifyDataGoKey(ctx, "short"); k.OK || k.Pending || k.Message == "" {
 		t.Fatalf("짧은 키: %+v", k)
 	}
+	// 키는 통했지만 0품목 → 성공으로 보이지 않는다
+	empty, _ := fakeMasterAPI(t, 0, func(i int) int { return 100 })
+	defer empty.Close()
+	crawler.DgamtURL = empty.URL + "/getDgamtList"
+	if k := s.VerifyDataGoKey(ctx, "TESTKEY-0123456789-abcdefghij"); k.OK || k.Pending || !strings.Contains(k.Message, "0품목") {
+		t.Fatalf("0품목 키 확인: %+v", k)
+	}
+	crawler.DgamtURL = srv.URL + "/getDgamtList"
 	if err := s.SetDataGoKey("TESTKEY-0123456789-abcdefghij"); err != nil || !s.GetSettings().HasDataGoKey {
 		t.Fatalf("저장: %v", err)
 	}

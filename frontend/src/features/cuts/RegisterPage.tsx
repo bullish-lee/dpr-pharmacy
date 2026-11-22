@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, Check, ChevronLeft, Smartphone } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { api, errorText, keys, obj, queryClient, useProduct, useScans, type service } from '../../app/api'
+import { api, errorText, keys, queryClient, useProduct, useScans, type service } from '../../app/api'
 import { dateDot } from '../../app/format'
 import { Link, navigate, paths } from '../../app/router'
 import { Badge, Button, Callout, Card, Empty, ErrorBox, Kbd, Segmented, Skeleton, cx } from '../../components/ui'
@@ -68,12 +68,11 @@ export function RegisterPage({ date, code }: { date: string; code: string }) {
 
   const finish = async () => {
     try {
-      await api.ConfirmDecision(date, code)
-      const sts = await api.ListSettlements(obj<service.SettlementFilter>({ effectiveDate: date, code }))
-      const st = sts.find((s) => s.supplierId === supplierId)
-      if (st) await api.SetSettlementStatus(st.id, 'done')
+      // 완료 수량 = 도매 앱에 등록했다고 표시한 포장만 (안 찍은 재고의 추정분은 넣지 않는다)
+      if (done < units.length && !window.confirm(`${units.length}포장 중 ${done}포장만 '스캔완료'로 표시했습니다.\n표시한 ${done}포장만 완료로 기록할까요?`)) return
+      const st = await api.FinishPhysical(date, code, supplierId)
       queryClient.invalidateQueries({ queryKey: keys.all })
-      toast.success(`${supplierName} 실물보상 처리 완료로 기록했습니다`)
+      toast.success(`${supplierName} 실물보상 ${st?.qty ?? ''}개 · ${Math.round(st?.amount ?? 0).toLocaleString('ko-KR')}원을 완료로 기록했습니다`)
     } catch (e) {
       toast.error(errorText(e))
     }
@@ -169,7 +168,7 @@ export function RegisterPage({ date, code }: { date: string; code: string }) {
                   <Button className="w-full" variant={done === units.length ? 'primary' : 'secondary'} onClick={finish} icon={<ArrowRight className="size-4" />}>
                     {supplierName} 처리 완료로 기록
                   </Button>
-                  <p className="mt-2 text-xs text-gray-600">판정을 확정하고 이 도매의 처리 결과를 '완료'로 저장합니다.</p>
+                  <p className="mt-2 text-xs text-gray-600">'스캔완료'로 표시한 포장의 수량으로 이 도매의 실물보상을 '완료'로 저장합니다. 도매가 인정한 수량·금액이 다르면 처리 내역에서 고칠 수 있습니다.</p>
                 </div>
               </Card>
             </div>

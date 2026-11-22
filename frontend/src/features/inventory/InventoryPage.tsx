@@ -1,6 +1,6 @@
 import { Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { api, obj, useAction, useInventory, useProductSearch, useUnresolved, type service } from '../../app/api'
+import { api, looksLikeEDICode, obj, useAction, useCodeCheck, useInventory, useProductSearch, useUnresolved, type service } from '../../app/api'
 import { basisLabel, dateDot, price, qty, todayISO, won } from '../../app/format'
 import { useRoute } from '../../app/router'
 import { ChangeLogTable } from '../../components/ChangeLog'
@@ -128,16 +128,27 @@ function StockTab() {
             ),
           },
           { key: 'unit', header: '단위', width: '80px', render: (r) => <span className="text-gray-600" title={r.unitNote}>{r.unit}</span> },
-          { key: 'qty', header: '재고', width: '100px', align: 'right', sort: (r) => r.qty, render: (r) => <b>{qty(r.qty)}</b> },
+          {
+            key: 'qty',
+            header: '재고',
+            width: '100px',
+            align: 'right',
+            sort: (r) => r.qty,
+            // 재고가 무엇으로 이루어졌는지 바로 보이게 (기준 수량 + 사입 − 조제, 고시 단위)
+            render: (r) => (
+              <b title={`${basisLabel[r.basis] ?? '기준'} ${qty(r.anchorQty)}${r.anchorDate ? ` (${dateDot(r.anchorDate)})` : ''} + 사입 ${qty(r.inflow)} − 조제 ${qty(r.outflow)} = ${qty(r.qty)} ${r.unit}`}>{qty(r.qty)}</b>
+            ),
+          },
           ...(flag ? [] : [{ key: 'est', header: '추정', width: '90px', align: 'right' as const, sort: (r: service.InventoryRow) => r.estimate, render: (r: service.InventoryRow) => (r.countQty != null ? <span className="text-gray-500">{qty(r.estimate)}</span> : '') }]),
           {
             key: 'basis',
-            header: '기준',
-            width: '170px',
+            header: '기준 수량',
+            width: '210px',
             render: (r) => (
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5" title="재고 = 기준 수량 + 이후 사입 − 이후 조제">
                 <Badge tone={r.basis === 'count' ? 'blue' : 'gray'}>{basisLabel[r.basis] ?? r.basis}</Badge>
-                <span className="num text-xs text-gray-600">{dateDot(r.anchorDate)}</span>
+                <span className="num text-sm text-gray-800">{qty(r.anchorQty)}</span>
+                <span className="num text-xs text-gray-500">{dateDot(r.anchorDate)}</span>
               </span>
             ),
           },
@@ -265,6 +276,7 @@ function CountDialog({ row, source = '재고', onClose }: { row: service.Invento
 
 function UnresolvedTab({ rows }: { rows: service.UnresolvedRow[] }) {
   const resolve = useAction((id: number, code: string) => api.ResolveUnresolved(id, code))
+  const resolveCode = useAction((id: number, code: string) => api.ResolveUnresolvedByCode(id, code), { success: '입력한 보험코드로 지정해 초기재고에 더했습니다' })
   const [search, setSearch] = useState<service.UnresolvedRow | null>(null)
   if (rows.length === 0) {
     return (
@@ -276,7 +288,7 @@ function UnresolvedTab({ rows }: { rows: service.UnresolvedRow[] }) {
   return (
     <>
       <Callout tone="info">
-        초기재고 파일에서 약품코드 없이 이름만 있어 자동으로 연결하지 못한 행입니다. 후보를 고르거나 검색해 지정하세요. 재고와 무관한 행(합계·메모 등)은 '제외'하세요. 지정하면 바로 초기재고에 더해집니다.
+        초기재고 파일에서 약품코드 없이 이름만 있어 자동으로 연결하지 못한 행입니다. 후보를 고르거나 검색해 지정하세요. 검색에도 없으면 '검색…'에 보험코드(9자리)를 입력해 직접 지정할 수 있습니다. 재고와 무관한 행(합계·메모 등)은 '제외'하세요. 지정하면 바로 초기재고에 더해집니다.
       </Callout>
       <DataTable
         rows={rows}
@@ -316,20 +328,68 @@ function UnresolvedTab({ rows }: { rows: service.UnresolvedRow[] }) {
           },
         ]}
       />
-      <ProductPickDialog row={search} onClose={() => setSearch(null)} onPick={(code) => search && resolve.mutate([search.id, code], { onSuccess: () => setSearch(null) })} />
+      <ProductPickDialog
+        row={search}
+        onClose={() => setSearch(null)}
+        onPick={(code) => search && resolve.mutate([search.id, code], { onSuccess: () => setSearch(null) })}
+        onPickCode={(code) => search && resolveCode.mutate([search.id, code], { onSuccess: () => setSearch(null) })}
+        pending={resolve.isPending || resolveCode.isPending}
+      />
     </>
   )
 }
 
-function ProductPickDialog({ row, onClose, onPick }: { row: service.UnresolvedRow | null; onClose: () => void; onPick: (code: string) => void }) {
+function ProductPickDialog({
+  row,
+  onClose,
+  onPick,
+  onPickCode,
+  pending,
+}: {
+  row: service.UnresolvedRow | null
+  onClose: () => void
+  onPick: (code: string) => void
+  onPickCode: (code: string) => void
+  pending: boolean
+}) {
   const [q, setQ] = useState('')
   const dq = useDebounced(q)
   const res = useProductSearch(dq)
+  const check = useCodeCheck(dq)
   useEffect(() => setQ(row?.name.split(/[\s(]/)[0] ?? ''), [row])
   if (!row) return null
+  const info = looksLikeEDICode(dq) ? check.data : undefined
   return (
     <Dialog open onClose={onClose} title={`약품 지정 — ${row.name}`}>
-      <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="약품명 또는 코드" />
+      <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="약품명 또는 보험코드(9자리)" />
+      <p className="mt-1.5 text-xs text-gray-600">찾는 약이 없으면 보험코드(9자리)를 입력하세요. 목록에 없는 코드도 직접 지정할 수 있습니다.</p>
+      {info?.code && (
+        <div className="mt-3 space-y-2">
+          {info.source ? (
+            <Callout
+              tone="info"
+              action={
+                <Button size="sm" variant="primary" loading={pending} onClick={() => onPickCode(info.code)}>
+                  이 코드로 지정
+                </Button>
+              }
+            >
+              <span className="code">{info.code}</span> · {info.name} ({info.source === 'pharmacy' ? '약국 품목' : '급여목록'})
+            </Callout>
+          ) : (
+            <Callout
+              tone="warn"
+              action={
+                <Button size="sm" variant="primary" loading={pending} onClick={() => onPickCode(info.code)}>
+                  그래도 이 코드로 지정
+                </Button>
+              }
+            >
+              <span className="code">{info.code}</span>는 약국 품목·급여목록에 없는 코드입니다. 숫자를 다시 확인하세요. 지정하면 파일의 약품명 '{row.name}'(으)로 재고에 추가되고, 같은 코드의 고시가 나오면 약가인하 대상에 포함됩니다. 나중에 올린 급여목록에 이 코드가 있으면 이름이 바로잡힙니다.
+            </Callout>
+          )}
+        </div>
+      )}
       <div className="mt-3 max-h-80 space-y-1 overflow-auto">
         {(res.data ?? []).map((c) => (
           <button key={c.code} onClick={() => onPick(c.code)} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-50">
@@ -337,7 +397,9 @@ function ProductPickDialog({ row, onClose, onPick }: { row: service.UnresolvedRo
             <span className="code shrink-0 text-gray-500">{c.code}</span>
           </button>
         ))}
-        {dq && res.data?.length === 0 && <p className="py-6 text-center text-sm text-gray-600">검색 결과가 없습니다</p>}
+        {dq && res.data?.length === 0 && !info?.code && (
+          <p className="py-6 text-center text-sm text-gray-600">검색 결과가 없습니다. 보험코드(9자리)를 알면 입력해 직접 지정하세요.</p>
+        )}
       </div>
     </Dialog>
   )

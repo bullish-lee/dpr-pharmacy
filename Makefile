@@ -20,7 +20,7 @@ WINENV  := CGO_ENABLED=0
 WBUILDW := $(WBUILD)
 endif
 
-.PHONY: dev test check vet-mac vet-win gotest tsc build windows web bindings release sensitive clean keygen
+.PHONY: dev test check vet-mac vet-win gotest tsc build windows web bindings release sensitive clean keygen public
 
 dev:
 	$(WAILS) dev
@@ -85,7 +85,13 @@ keygen:
 clean:
 	rm -rf build/bin build/release frontend/dist/assets
 
-# 민감자료 표시 목록 (오픈소스 공개 전 점검, docs/SENSITIVE.md)
+# 공개 저장소(오픈소스)로 내보내기: 점검(민감자료 표시·실제 용어 대조) → 복사. 커밋·푸시는 그 폴더에서 확인 뒤에.
+#   make public PUBLIC=../dpr-pharmacy
+PUBLIC ?= ../dpr-pharmacy
+public:
+	@go run ./tools/pubsync $(PUBLIC)
+
+# 실데이터 표시 목록 (docs/SENSITIVE.md — 비공개 저장소의 목록·절차는 docs/PRIVATE_SENSITIVE.md)
 sensitive:
 	@grep -rn --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=wailsjs --exclude=SENSITIVE.md --exclude=Makefile "민감자료" . || true
 	@echo "--- GitHub 이슈 (라벨 민감자료)"; gh issue list --label 민감자료 --state all 2>/dev/null || echo "(gh 없음)"

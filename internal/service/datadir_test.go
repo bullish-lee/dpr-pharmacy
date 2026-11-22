@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -97,6 +98,9 @@ func TestMoveDataDirCleansUpOnFailure(t *testing.T) {
 	bad := filepath.Join(s.DataDir, "raw", "읽을 수 없음.bin")
 	_ = os.MkdirAll(filepath.Dir(bad), 0o755)
 	_ = os.WriteFile(bad, []byte("x"), 0o644)
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 에서는 chmod 로 권한 오류를 만들 수 없다")
+	}
 	_ = os.Chmod(bad, 0o000)
 	defer os.Chmod(bad, 0o644)
 	target := filepath.Join(t.TempDir(), "새 자료")

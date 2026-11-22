@@ -21,6 +21,7 @@ export const CHANGE_KIND: Record<string, string> = {
   import_delete: '가져오기 삭제',
   notice_delete: '고시 삭제',
   data_dir: '데이터 폴더',
+  code_change: '제품코드 변경',
   backup_dir: '백업 폴더',
 }
 

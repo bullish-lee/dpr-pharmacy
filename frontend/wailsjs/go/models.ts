@@ -1376,6 +1376,34 @@ export namespace service {
 	        this.message = source["message"];
 	    }
 	}
+	export class LotEvidenceView {
+	    id: number;
+	    source: string;
+	    supplierId: number;
+	    supplierName: string;
+	    date: string;
+	    qty: number;
+	    lot: string;
+	    expiry: string;
+	    code: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LotEvidenceView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.source = source["source"];
+	        this.supplierId = source["supplierId"];
+	        this.supplierName = source["supplierName"];
+	        this.date = source["date"];
+	        this.qty = source["qty"];
+	        this.lot = source["lot"];
+	        this.expiry = source["expiry"];
+	        this.code = source["code"];
+	    }
+	}
 	export class LotInput {
 	    code: string;
 	    supplierId: number;
@@ -1400,6 +1428,89 @@ export namespace service {
 	        this.source = source["source"];
 	    }
 	}
+	export class LotPhotoRequest {
+	    imageBase64: string;
+	    code: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LotPhotoRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.imageBase64 = source["imageBase64"];
+	        this.code = source["code"];
+	    }
+	}
+	export class LotPhotoRow {
+	    code: string;
+	    date: string;
+	    supplierRaw: string;
+	    supplierId: number;
+	    supplierName: string;
+	    qty: number;
+	    expiry: string;
+	    lot: string;
+	    matched: string;
+	    unsure: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new LotPhotoRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.date = source["date"];
+	        this.supplierRaw = source["supplierRaw"];
+	        this.supplierId = source["supplierId"];
+	        this.supplierName = source["supplierName"];
+	        this.qty = source["qty"];
+	        this.expiry = source["expiry"];
+	        this.lot = source["lot"];
+	        this.matched = source["matched"];
+	        this.unsure = source["unsure"];
+	    }
+	}
+	export class LotPhotoResult {
+	    rows: LotPhotoRow[];
+	    mode: string;
+	    note: string;
+	    rawText: string;
+	    skipped: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new LotPhotoResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.rows = this.convertValues(source["rows"], LotPhotoRow);
+	        this.mode = source["mode"];
+	        this.note = source["note"];
+	        this.rawText = source["rawText"];
+	        this.skipped = source["skipped"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class LotView {
 	    id: number;
 	    source: string;
@@ -1443,6 +1554,22 @@ export namespace service {
 	        this.updated = source["updated"];
 	        this.count = source["count"];
 	        this.listDate = source["listDate"];
+	        this.message = source["message"];
+	    }
+	}
+	export class NoticePostResult {
+	    noticeId: number;
+	    already: boolean;
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new NoticePostResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.noticeId = source["noticeId"];
+	        this.already = source["already"];
 	        this.message = source["message"];
 	    }
 	}
@@ -1545,6 +1672,22 @@ export namespace service {
 		}
 	}
 	
+	export class ProductCodeInfo {
+	    code: string;
+	    name: string;
+	    source: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProductCodeInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.name = source["name"];
+	        this.source = source["source"];
+	    }
+	}
 	export class SettlementView {
 	    id: number;
 	    effectiveDate: string;

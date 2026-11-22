@@ -270,6 +270,12 @@ func (s *Service) Import(req ImportRequest) (*ImportResult, error) {
 		return nil, err
 	}
 	res.Kind, res.FileName = req.Kind, name
+	switch req.Kind {
+	case "purchase", "dispense", "initial_stock", "stock_count", "lot", "gtin": // 옛 제품코드로 된 자료 → 바뀐 새 코드로
+		if !res.NeedsConfirm && !res.NeedsMapping {
+			s.applyStoredCodeChanges()
+		}
+	}
 	if !res.NeedsConfirm {
 		res.Preview = pv
 		switch req.Kind {
@@ -1287,6 +1293,76 @@ func (s *Service) ResolveUnresolved(id int64, code string) error {
 			return err
 		}
 		return logChange(tx, ChangeEntry{Kind: "initial_resolve", ProductCode: code, OldValue: what, NewValue: code, Note: "초기재고 확인 필요 행 → 약품 지정", Source: "재고"})
+	})
+}
+
+// ProductCodeInfo : 사용자가 직접 입력한 보험코드를 확인한 결과 (지정 전에 화면에 보여준다)
+type ProductCodeInfo struct {
+	Code   string `json:"code"`   // 9자리로 정규화한 보험코드 ("" = 형식이 맞지 않음)
+	Name   string `json:"name"`   // 약국 품목·급여목록의 이름 (모르는 코드면 "")
+	Source string `json:"source"` // pharmacy(약국 품목) | master(급여목록) | ""(프로그램에 없는 코드)
+}
+
+// normalizeEDIInput : 화면에서 입력한 보험코드를 9자리로 맞춘다 (공백·하이픈 허용, 앞자리 0 이 빠진 8자리 허용). 아니면 "".
+func normalizeEDIInput(raw string) string {
+	s := strings.NewReplacer(" ", "", "-", "", "\t", "").Replace(strings.TrimSpace(raw))
+	code := domain.NormalizeProductCode(s)
+	if !domain.IsEDICode(code) {
+		return ""
+	}
+	return code
+}
+
+// CheckProductCode 는 직접 입력한 보험코드가 형식에 맞는지, 프로그램이 아는 약인지 알려준다.
+func (s *Service) CheckProductCode(raw string) (*ProductCodeInfo, error) {
+	info := &ProductCodeInfo{Code: normalizeEDIInput(raw)}
+	if info.Code == "" {
+		return info, nil
+	}
+	var name string
+	switch err := s.DB.QueryRow("SELECT name FROM product WHERE code = ?", info.Code).Scan(&name); {
+	case err == nil:
+		info.Name, info.Source = name, "pharmacy"
+		return info, nil
+	case !errors.Is(err, sql.ErrNoRows):
+		return nil, err
+	}
+	switch err := s.DB.QueryRow("SELECT name FROM drug_master WHERE code = ?", info.Code).Scan(&name); {
+	case err == nil:
+		info.Name, info.Source = name, "master"
+	case !errors.Is(err, sql.ErrNoRows):
+		return nil, err
+	}
+	return info, nil
+}
+
+// ResolveUnresolvedByCode 는 후보·검색에 없는 약을 사용자가 입력한 보험코드(9자리)로 지정하고 초기재고에 더한다.
+// 프로그램 목록(약국 품목·급여목록)에 없는 코드도 받는다. 이름은 파일의 약품명을 쓰고, 나중에 급여목록을 올리면 바로잡힌다.
+// 같은 코드가 이미 재고에 있으면 그 품목에 합쳐진다.
+func (s *Service) ResolveUnresolvedByCode(id int64, raw string) error {
+	code := normalizeEDIInput(raw)
+	if code == "" {
+		return errors.New("보험코드는 숫자 9자리로 입력하세요 (예: 987654320)")
+	}
+	info, err := s.CheckProductCode(code)
+	if err != nil {
+		return err
+	}
+	var name, sheetName string
+	var qty int64
+	if err := s.DB.QueryRow("SELECT name, sheet, qty FROM initial_unresolved WHERE id = ?", id).Scan(&name, &sheetName, &qty); err != nil {
+		return ErrNotFound
+	}
+	what := fmt.Sprintf("%s (%s, 원본 %s)", name, sheetName, domain.Qty(qty))
+	note := "초기재고 확인 필요 행 → 보험코드 직접 입력"
+	if info.Source == "" {
+		note += " (급여목록·약국 품목에 없는 코드)"
+	}
+	return s.DB.Tx(nilCtx(), func(tx *sql.Tx) error {
+		if err := resolveUnresolvedTx(tx, s, id, "", code, "user"); err != nil {
+			return err
+		}
+		return logChange(tx, ChangeEntry{Kind: "initial_resolve", ProductCode: code, OldValue: what, NewValue: code, Note: note, Source: "재고"})
 	})
 }
 

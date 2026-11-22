@@ -755,6 +755,11 @@ func (s *Service) Ranking(eff string, heldOnly bool) (*Ranking, error) {
 		if rk.Rows[i].GrossLoss != rk.Rows[j].GrossLoss {
 			return rk.Rows[i].GrossLoss > rk.Rows[j].GrossLoss
 		}
+		// 손실이 같으면(재고 없는 품목 등) 1단위 인하폭이 큰 순 (기획서 a: '약가인하폭이 큰 약품 순'), 그다음 인하율
+		di, dj := rk.Rows[i].PriceBefore-rk.Rows[i].PriceAfter, rk.Rows[j].PriceBefore-rk.Rows[j].PriceAfter
+		if di != dj {
+			return di > dj
+		}
 		return rk.Rows[i].Rate > rk.Rows[j].Rate
 	})
 	rk.Warnings = s.dataWarnings(ac.asOf)
