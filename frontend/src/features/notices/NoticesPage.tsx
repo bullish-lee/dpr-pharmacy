@@ -83,7 +83,7 @@ export function NoticesPage() {
                 return <Badge tone={b.tone} title={r.error}>{b.label}</Badge>
               },
             },
-            { key: 'src', header: '출처', width: '80px', render: (r) => <span className="text-gray-600">{r.source === 'mohw' ? '자동' : r.source === 'history' ? '가격 이력' : '업로드'}</span> },
+            { key: 'src', header: '출처', width: '80px', render: (r) => <span className="text-gray-600">{r.source === 'mohw' ? '자동' : r.source === 'history' ? '지난 이력' : '업로드'}</span> },
           ]}
           defaultSort={{ key: 'pub', dir: 'desc' }}
         />

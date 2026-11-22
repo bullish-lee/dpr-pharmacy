@@ -366,7 +366,7 @@ func (s *Service) CheckDrugMaster(ctx context.Context, force bool) (*MasterResul
 	if n, downs, changed, herr := s.storePriceHistory(items, now); herr != nil {
 		s.Log.Warn("가격 이력 반영 실패", "err", herr)
 	} else if changed {
-		histNote = fmt.Sprintf(" 지난 %d개월 가격 변경 %s건(인하 %s건)을 이력으로 넣었습니다.", historyMonths, comma(n), comma(downs))
+		histNote = fmt.Sprintf(" 지난 %d개월의 인하·인상·신설·삭제 %s건(인하 %s건)을 지난 이력으로 넣었습니다.", historyMonths, comma(n), comma(downs))
 	}
 	sha := shaHex([]byte(masterSHA(recs) + "|" + listDate + "|" + strconv.Itoa(len(dm.Changes)))) // 내용이 같아도 새 달 목록이면 적용일을 바꿔 둔다
 	var lastSHA string

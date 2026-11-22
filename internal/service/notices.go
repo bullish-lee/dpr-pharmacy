@@ -153,6 +153,9 @@ func (s *Service) ingestNoticeFile(source, listNo, title, url, publishedAt, file
 			changed[c.Code] = true
 		}
 		sum.Dates = sortedKeys(dates)
+		if err := pruneHistoryOverlaps(tx); err != nil { // 같은 품목·시행일의 '지난 이력' 행은 실제 고시에 자리를 내준다
+			return err
+		}
 		if err := recomputeUnits(tx, sortedKeys(changed)); err != nil { // 고시 단위·가격으로 사입 환산 갱신
 			return err
 		}
