@@ -40,6 +40,10 @@ DPR.exe rank 2026-11-01               # 손실 순위 출력
 DPR.exe backup | datadir | version
 ```
 
+### 프로그램 지우기
+
+설치 프로그램이 없는 휴대용 실행 파일입니다. 작업 스케줄러에 등록했다면 설정에서 [등록 해제]를 누른 뒤, `DPR.exe` 폴더를 지우면 됩니다. 자료까지 지우려면 데이터 폴더(기본 `%APPDATA%\DPR`)와 `%APPDATA%\DPR-data-location.txt`(옮긴 경우), 따로 정한 백업 폴더를 지웁니다. 자세한 순서는 zip 안 `README.txt`의 [프로그램 지우기]에 있습니다.
+
 ## 개발
 
 필요: Go 1.26+, Node 22+, [Wails v2 CLI](https://wails.io) (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
