@@ -56,7 +56,7 @@ export function DashboardPage() {
         </Callout>
       )}
 
-      <div className="grid grid-cols-4 gap-3 max-[1180px]:grid-cols-2">
+      <div className="grid grid-cols-4 gap-3 max-[860px]:grid-cols-2">
         <Kpi
           label={focus && focus.daysLeft < 0 ? '진행 중인 시행일' : '다가오는 시행일'}
           value={focus ? dday(focus.daysLeft) : '—'}

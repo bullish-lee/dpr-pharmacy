@@ -104,7 +104,7 @@ function StockTab() {
           {
             key: 'name',
             header: '약품명',
-            width: 'minmax(280px,3fr)',
+            width: 'minmax(220px,3fr)',
             sort: (r) => r.name,
             render: (r) => (
               <div className="min-w-0">
@@ -127,23 +127,25 @@ function StockTab() {
               </div>
             ),
           },
-          { key: 'unit', header: '단위', width: '80px', render: (r) => <span className="text-gray-600" title={r.unitNote}>{r.unit}</span> },
           {
             key: 'qty',
             header: '재고',
-            width: '100px',
+            width: '120px',
             align: 'right',
             sort: (r) => r.qty,
             // 재고가 무엇으로 이루어졌는지 바로 보이게 (기준 수량 + 사입 − 조제, 고시 단위)
             render: (r) => (
-              <b title={`${basisLabel[r.basis] ?? '기준'} ${qty(r.anchorQty)}${r.anchorDate ? ` (${dateDot(r.anchorDate)})` : ''} + 사입 ${qty(r.inflow)} − 조제 ${qty(r.outflow)} = ${qty(r.qty)} ${r.unit}`}>{qty(r.qty)}</b>
+              <div title={`${basisLabel[r.basis] ?? '기준'} ${qty(r.anchorQty)}${r.anchorDate ? ` (${dateDot(r.anchorDate)})` : ''} + 사입 ${qty(r.inflow)} − 조제 ${qty(r.outflow)} = ${qty(r.qty)} ${r.unit}${r.unitNote ? ` · ${r.unitNote}` : ''}`}>
+                <b>{qty(r.qty)}</b>
+                <span className="ml-1 text-xs font-normal text-gray-500">{r.unit}</span>
+                {r.countQty != null && r.estimate !== r.qty && <div className="text-xs font-normal text-gray-500">추정 {qty(r.estimate)}</div>}
+              </div>
             ),
           },
-          ...(flag ? [] : [{ key: 'est', header: '추정', width: '90px', align: 'right' as const, sort: (r: service.InventoryRow) => r.estimate, render: (r: service.InventoryRow) => (r.countQty != null ? <span className="text-gray-500">{qty(r.estimate)}</span> : '') }]),
           {
             key: 'basis',
             header: '기준 수량',
-            width: '210px',
+            width: '200px',
             render: (r) => (
               <span className="flex items-center gap-1.5" title="재고 = 기준 수량 + 이후 사입 − 이후 조제">
                 <Badge tone={r.basis === 'count' ? 'blue' : 'gray'}>{basisLabel[r.basis] ?? r.basis}</Badge>
@@ -152,18 +154,24 @@ function StockTab() {
               </span>
             ),
           },
-          { key: 'in', header: '+ 사입', width: '90px', align: 'right', render: (r) => qty(r.inflow) },
-          { key: 'out', header: '− 조제', width: '90px', align: 'right', render: (r) => qty(r.outflow) },
+          { key: 'in', header: '+ 사입', width: '80px', align: 'right', render: (r) => qty(r.inflow) },
+          { key: 'out', header: '− 조제', width: '80px', align: 'right', render: (r) => qty(r.outflow) },
           ...(flag
             ? []
             : [
-                { key: 'price', header: '단가', width: '90px', align: 'right' as const, render: (r: service.InventoryRow) => price(r.unitPrice) },
-                { key: 'value', header: '금액(원)', width: '110px', align: 'right' as const, sort: (r: service.InventoryRow) => r.value, render: (r: service.InventoryRow) => won(r.value) },
+                {
+                  key: 'value',
+                  header: '금액(원)',
+                  width: '100px',
+                  align: 'right' as const,
+                  sort: (r: service.InventoryRow) => r.value,
+                  render: (r: service.InventoryRow) => <span title={`1${r.unit || '단위'} ${price(r.unitPrice)}원 × ${qty(r.qty)}`}>{won(r.value)}</span>,
+                },
               ]),
           {
             key: 'act',
             header: '바로 고치기',
-            width: flag ? '300px' : '230px',
+            width: flag ? '300px' : '190px',
             render: (r) => {
               const f = flag || r.flags?.find((x) => !r.acked?.includes(x)) || ''
               return (

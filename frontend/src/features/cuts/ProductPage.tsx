@@ -69,7 +69,7 @@ export function ProductPage({ date, code }: { date: string; code: string }) {
         </Callout>
       )}
 
-      <div className="grid grid-cols-[1fr_1fr_1fr_1.4fr] gap-3 max-[1180px]:grid-cols-2">
+      <div className="grid grid-cols-[1fr_1fr_1fr_1.4fr] gap-3 max-[1180px]:grid-cols-3 max-[760px]:grid-cols-1 max-[1180px]:[&>*:last-child]:col-span-3 max-[760px]:[&>*:last-child]:col-span-1">
         <Card>
           <div className="text-[0.8125rem] font-semibold text-gray-600">상한금액 (고시 단위 {r.baseLabel || r.unit || r.noticeUnit || '1'})</div>
           <div className="num mt-1.5 text-xl font-semibold">

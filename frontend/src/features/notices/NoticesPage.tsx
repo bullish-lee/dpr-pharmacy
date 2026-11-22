@@ -46,9 +46,22 @@ export function NoticesPage() {
           empty={<Empty title="수집된 고시가 없습니다">'지금 확인'을 누르거나 오른쪽에 목록표 엑셀을 올려주세요.</Empty>}
           columns={[
             { key: 'no', header: '고시', width: '120px', render: (r) => <span className="num font-semibold">{r.noticeNo ? `제${r.noticeNo}호` : '번호 미상'}</span> },
-            { key: 'title', header: '제목 / 파일', width: 'minmax(220px,2fr)', render: (r) => <span className="truncate text-gray-700" title={r.title || r.fileName}>{r.title || r.fileName}</span> },
+            { key: 'title', header: '제목 / 파일', width: 'minmax(220px,2fr)', render: (r) => <span className="block truncate text-gray-700" title={r.title || r.fileName}>{r.title || r.fileName}</span> },
             { key: 'pub', header: '게시일', width: '110px', sort: (r) => r.publishedAt, render: (r) => <span className="num">{dateDot(r.publishedAt)}</span> },
-            { key: 'eff', header: '시행일', width: '150px', render: (r) => <span className="num text-[0.8125rem]">{(r.dates ?? []).map(dateDot).join(', ')}</span> },
+            {
+              key: 'eff',
+              header: '시행일',
+              width: '150px',
+              render: (r) => {
+                const ds = (r.dates ?? []).map(dateDot)
+                return (
+                  <span className="num block truncate text-[0.8125rem]" title={ds.join(', ')}>
+                    {ds[0]}
+                    {ds.length > 1 && <span className="text-gray-500"> 외 {ds.length - 1}</span>}
+                  </span>
+                )
+              },
+            },
             { key: 'cnt', header: '인하 · 인상 · 신설 · 삭제', width: '200px', render: (r) => <span className="num text-gray-700">{r.counts?.price_down ?? 0} · {r.counts?.price_up ?? 0} · {r.counts?.new ?? 0} · {r.counts?.delete ?? 0}</span> },
             {
               key: 'held',

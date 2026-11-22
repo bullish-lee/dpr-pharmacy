@@ -25,13 +25,14 @@ export function CutsPage() {
             sort: (r) => r.effectiveDate,
             render: (r) => (
               <div className="flex items-center gap-2">
-                <span className="num font-semibold">{dateDot(r.effectiveDate)}</span>
+                <span className="num font-semibold" title={dateLong(r.effectiveDate)}>
+                  {dateDot(r.effectiveDate)}
+                </span>
                 <span className={r.daysLeft >= 0 ? 'text-xs font-bold text-blue-700' : 'text-xs text-gray-500'}>{dday(r.daysLeft)}</span>
               </div>
             ),
           },
-          { key: 'dow', header: '요일', width: '110px', render: (r) => <span className="text-gray-600">{dateLong(r.effectiveDate)}</span> },
-          { key: 'notice', header: '고시', width: 'minmax(140px,1fr)', render: (r) => <span className="num text-gray-700">{(r.notices ?? []).map((n) => `제${n}호`).join(', ')}</span> },
+          { key: 'notice', header: '고시', width: 'minmax(110px,1fr)', render: (r) => <span className="num block truncate text-gray-700">{(r.notices ?? []).map((n) => `제${n}호`).join(', ') || '—'}</span> },
           { key: 'down', header: '인하', width: '80px', align: 'right', sort: (r) => r.down, render: (r) => r.down },
           { key: 'held', header: '보유 인하', width: '100px', align: 'right', sort: (r) => r.heldDown, render: (r) => (r.computed ? <b>{r.heldDown}</b> : '') },
           { key: 'loss', header: '예상 손실(원)', width: '130px', align: 'right', sort: (r) => r.grossLoss, render: (r) => (r.computed ? won(r.grossLoss) : '') },

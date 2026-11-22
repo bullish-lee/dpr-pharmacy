@@ -68,7 +68,7 @@ export function ReportsPage() {
         <ErrorBox error={rep.error} onRetry={() => rep.refetch()} />
       ) : (
         <>
-          <div className="grid grid-cols-4 gap-3 max-[1180px]:grid-cols-2">
+          <div className="grid grid-cols-4 gap-3 max-[860px]:grid-cols-2">
             <Kpi label="보상액 합계" value={won(rep.data.total.amount)} unit="원" sub={`${rep.data.total.count}건`} />
             <Kpi label="서류보상" value={won(rep.data.total.document)} unit="원" />
             <Kpi label="실물보상" value={won(rep.data.total.physical)} unit="원" />

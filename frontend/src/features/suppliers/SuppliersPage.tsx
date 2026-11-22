@@ -63,7 +63,11 @@ export function SuppliersPage() {
   const sups = useSuppliers(showDeleted)
   const def = useRules(0)
   const dates = useCutDates()
-  const nextEff = useMemo(() => (dates.data ?? []).filter((d) => d.daysLeft >= 0).sort((a, b) => a.daysLeft - b.daysLeft)[0]?.effectiveDate ?? todayISO(), [dates.data])
+  const nextEff = useMemo(() => {
+    const near = (a: { daysLeft: number }, b: { daysLeft: number }) => Math.abs(a.daysLeft) - Math.abs(b.daysLeft)
+    const all = dates.data ?? []
+    return ([...all].filter((d) => d.heldDown > 0).sort(near)[0] ?? [...all].sort(near)[0])?.effectiveDate ?? todayISO()
+  }, [dates.data])
   const [eff, setEff] = useState('')
   const previewDate = eff || nextEff
 
