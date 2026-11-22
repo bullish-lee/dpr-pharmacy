@@ -76,6 +76,8 @@ export function ImportKinds():Promise<Array<main.ImportKind>>;
 
 export function ImportNoticePost(arg1:string):Promise<service.NoticePostResult>;
 
+export function ImportNoticePosts(arg1:string):Promise<service.NoticePostsResult>;
+
 export function ImportSchema(arg1:string):Promise<ingest.Schema>;
 
 export function InstallWindowsTasks():Promise<string>;

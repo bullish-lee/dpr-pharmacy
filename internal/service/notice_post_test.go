@@ -88,3 +88,33 @@ func TestImportNoticePost(t *testing.T) {
 		t.Fatalf("이미 가져온 고시를 다시 요청함: 상세 %d, 첨부 %d", views.Load(), downloads.Load())
 	}
 }
+
+// 여러 줄로 붙여 넣은 게시글 주소·번호를 하나씩 나눈다 (빈 줄·중복 제거)
+func TestSplitPostInputs(t *testing.T) {
+	got := SplitPostInputs(" 1487997\r\nhttps://www.mohw.go.kr/board.es?mid=a10409020000&bid=0026&list_no=1490001&act=view\n\n1487997, 1490002\t1490003 ")
+	want := []string{"1487997", "https://www.mohw.go.kr/board.es?mid=a10409020000&bid=0026&list_no=1490001&act=view", "1490002", "1490003"}
+	if len(got) != len(want) {
+		t.Fatalf("%v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%d: %q", i, got[i])
+		}
+	}
+	s, err := NewTemp(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.ImportNoticePosts(context.Background(), nil); err == nil {
+		t.Fatal("빈 입력은 오류")
+	}
+	if _, err := s.ImportNoticePosts(context.Background(), make([]string, 41)); err == nil {
+		t.Fatal("너무 많으면 오류")
+	}
+	// 잘못된 주소는 요청하지 않고 그 줄만 실패로 남긴다
+	res, err := s.ImportNoticePosts(context.Background(), []string{"https://example.com/board.es?list_no=1"})
+	if err != nil || len(res.Failed) != 1 || res.Imported != 0 {
+		t.Fatalf("%+v %v", res, err)
+	}
+}

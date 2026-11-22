@@ -142,6 +142,10 @@ export function ImportNoticePost(arg1) {
   return window['go']['main']['App']['ImportNoticePost'](arg1);
 }
 
+export function ImportNoticePosts(arg1) {
+  return window['go']['main']['App']['ImportNoticePosts'](arg1);
+}
+
 export function ImportSchema(arg1) {
   return window['go']['main']['App']['ImportSchema'](arg1);
 }

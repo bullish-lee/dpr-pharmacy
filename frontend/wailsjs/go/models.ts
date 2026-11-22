@@ -1573,6 +1573,24 @@ export namespace service {
 	        this.message = source["message"];
 	    }
 	}
+	export class NoticePostsResult {
+	    imported: number;
+	    already: number;
+	    failed: string[];
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new NoticePostsResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.imported = source["imported"];
+	        this.already = source["already"];
+	        this.failed = source["failed"];
+	        this.message = source["message"];
+	    }
+	}
 	
 	export class Notification {
 	    id: number;

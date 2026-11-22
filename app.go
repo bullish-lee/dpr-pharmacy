@@ -508,6 +508,17 @@ func (a *App) ListLots(code string) ([]service.LotView, error) { return a.svc.Li
 func (a *App) AddLot(in service.LotInput) (int64, error)       { return a.svc.AddLot(in) }
 func (a *App) DeleteLot(id int64) error                        { return a.svc.DeleteLot(id) }
 
+// ImportNoticePosts : 게시글 주소·번호 여러 개(줄바꿈으로 나눔)를 차례로 가져오기 — 지난 1년 고시를 한 번에
+func (a *App) ImportNoticePosts(text string) (*service.NoticePostsResult, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Minute)
+	defer cancel()
+	res, err := a.svc.ImportNoticePosts(ctx, service.SplitPostInputs(text))
+	if res != nil && res.Imported > 0 {
+		runtime.EventsEmit(a.ctx, "data-changed", "notice")
+	}
+	return res, err
+}
+
 // ── 사입정보 사진 판독 (회차 4단계) ─────────────────────────────
 
 // ReadLotPhoto : 사입정보 사진 1장을 Windows 기본 OCR(무료·오프라인)로 판독한다 (저장하지 않음 — 화면에서 확인·수정한 뒤 SaveLotPhotoRows)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"dpr/internal/crawler"
 )
@@ -67,4 +68,66 @@ func (s *Service) ImportNoticePost(ctx context.Context, input string) (*NoticePo
 		s.OnDataChanged("notice")
 	}
 	return &NoticePostResult{NoticeID: id, Message: msg}, nil
+}
+
+// NoticePostsResult : 지난 고시 여러 개 가져오기 결과
+type NoticePostsResult struct {
+	Imported int      `json:"imported"` // 새로 가져온 고시
+	Already  int      `json:"already"`  // 이미 있던 고시
+	Failed   []string `json:"failed"`   // 실패한 줄과 이유
+	Message  string   `json:"message"`
+}
+
+// SplitPostInputs : 여러 줄(또는 쉼표·공백으로 나눈) 게시글 주소·번호를 하나씩 나눈다 (빈 것·중복 제거, 순서 유지)
+func SplitPostInputs(text string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range strings.FieldsFunc(text, func(r rune) bool { return r == '\n' || r == '\r' || r == ',' || r == ' ' || r == '\t' }) {
+		if f = strings.TrimSpace(f); f != "" && !seen[f] {
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// ImportNoticePosts 는 게시글 주소(또는 번호) 여러 개를 차례로 가져온다 — 지난 1년 고시를 한 번에 넣을 때.
+// 글마다 사이를 두고 하나씩 받는다 (서버에 몰아서 요청하지 않음). 한 줄이 실패해도 나머지는 계속한다.
+func (s *Service) ImportNoticePosts(ctx context.Context, inputs []string) (*NoticePostsResult, error) {
+	const maxPosts = 40
+	if len(inputs) == 0 {
+		return nil, errors.New("게시글 주소나 번호를 넣어 주세요")
+	}
+	if len(inputs) > maxPosts {
+		return nil, fmt.Errorf("한 번에 %d개까지만 가져옵니다 (%d개 입력)", maxPosts, len(inputs))
+	}
+	res := &NoticePostsResult{}
+	pause := NewCrawler().Pause
+	for i, in := range inputs {
+		if i > 0 {
+			if err := crawler.Pause(ctx, pause); err != nil {
+				return res, err
+			}
+		}
+		r, err := s.ImportNoticePost(ctx, in)
+		switch {
+		case err != nil:
+			if ctx.Err() != nil {
+				return res, ctx.Err()
+			}
+			res.Failed = append(res.Failed, fmt.Sprintf("%s — %v", in, err))
+		case r.Already:
+			res.Already++
+		default:
+			res.Imported++
+		}
+	}
+	res.Message = fmt.Sprintf("고시 %d건을 가져왔습니다", res.Imported)
+	if res.Already > 0 {
+		res.Message += fmt.Sprintf(" · 이미 있던 것 %d건", res.Already)
+	}
+	if len(res.Failed) > 0 {
+		res.Message += fmt.Sprintf(" · 실패 %d건", len(res.Failed))
+	}
+	return res, nil
 }

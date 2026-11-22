@@ -1,11 +1,11 @@
 import { ArrowLeft, Download, ExternalLink, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { api, obj, useAction, useNoticeChanges, useNotices, type service } from '../../app/api'
+import { api, errorText, obj, useAction, useNoticeChanges, useNotices, type service } from '../../app/api'
 import { dateDot, dateTime, detailLabel, kindLabel, pct, price, qty } from '../../app/format'
 import { Link, navigate, paths } from '../../app/router'
 import { DataTable } from '../../components/DataTable'
 import { FileDrop, fileToBase64 } from '../../components/FileDrop'
-import { Badge, Button, Callout, Card, Empty, ErrorBox, Input, PageHeader, Segmented, Skeleton, Switch } from '../../components/ui'
+import { Badge, Button, Callout, Card, Empty, ErrorBox, PageHeader, Segmented, Skeleton, Switch } from '../../components/ui'
 
 const statusBadge: Record<string, { label: string; tone: 'gray' | 'green' | 'amber' | 'red' | 'outline' }> = {
   parsed: { label: '분석 완료', tone: 'outline' },
@@ -19,12 +19,29 @@ export function NoticesPage() {
   const crawl = useAction(() => api.RunCrawl(), {
     success: (r) => (r.skipped ? '다른 수집이 진행 중입니다' : r.new > 0 ? `새 고시 ${r.new}건을 가져왔습니다` : `확인 완료 — 새 고시 없음 (RSS ${r.checked}건 중 대상 ${r.matched}건)`),
   })
+  // 목록표 여러 개를 한꺼번에 (지난 1년 고시를 내려받아 둔 경우) — 하나씩 차례로 가져오고 결과를 모아 알린다
   const upload = useAction(
-    async (f: File) => api.Import(obj<service.ImportRequest>({ kind: 'notice', fileName: f.name, dataBase64: await fileToBase64(f) })),
-    { success: (r) => r.message },
+    async (files: File[]) => {
+      let ok = 0
+      const failed: string[] = []
+      let last = ''
+      for (const f of files) {
+        try {
+          const r = await api.Import(obj<service.ImportRequest>({ kind: 'notice', fileName: f.name, dataBase64: await fileToBase64(f) }))
+          ok++
+          last = r?.message ?? ''
+        } catch (e) {
+          failed.push(`${f.name} — ${errorText(e)}`)
+        }
+      }
+      if (files.length === 1 && failed.length) throw new Error(failed[0])
+      return { ok, failed, last, n: files.length }
+    },
+    { success: (r) => (r.n === 1 ? r.last : `고시 파일 ${r.ok}개를 가져왔습니다${r.failed.length ? ` · 실패 ${r.failed.length}개: ${r.failed.join(' / ')}` : ''}`) },
   )
   const [postLink, setPostLink] = useState('')
-  const fromPost = useAction((link: string) => api.ImportNoticePost(link), { success: (r) => r.message })
+  const [postFails, setPostFails] = useState<string[]>([])
+  const fromPost = useAction((text: string) => api.ImportNoticePosts(text), { success: (r) => r.message })
   if (isLoading) return <Skeleton rows={8} />
   if (error) return <ErrorBox error={error} onRetry={() => refetch()} />
   return (
@@ -91,8 +108,9 @@ export function NoticesPage() {
           <Card title="목록표 직접 올리기">
             <FileDrop
               title="고시 '별표1 목록표' 엑셀"
-              hint="자동 수집이 실패했거나 도매에서 받은 파일이 있을 때"
-              onFiles={(f) => upload.mutate([f[0]])}
+              hint="자동 수집이 실패했거나 지난 고시를 내려받아 둔 경우 — 여러 파일을 한꺼번에 놓아도 됩니다"
+              multiple
+              onFiles={(f) => upload.mutate([f])}
               disabled={upload.isPending}
             />
           </Card>
@@ -102,19 +120,37 @@ export function NoticesPage() {
               onSubmit={(e) => {
                 e.preventDefault()
                 if (!postLink.trim()) return
+                setPostFails([])
                 fromPost.mutate([postLink.trim()], {
                   onSuccess: (r) => {
-                    setPostLink('')
-                    if (r.noticeId) navigate(paths.notice(r.noticeId))
+                    setPostFails(r.failed ?? [])
+                    if (!(r.failed ?? []).length) setPostLink('')
                   },
                 })
               }}
             >
-              <Input value={postLink} onChange={(e) => setPostLink(e.target.value)} placeholder="복지부 게시글 주소 또는 번호 (list_no)" aria-label="복지부 게시글 주소" />
+              <textarea
+                value={postLink}
+                onChange={(e) => setPostLink(e.target.value)}
+                rows={3}
+                placeholder={'복지부 게시글 주소 또는 번호 (list_no)\n여러 개는 한 줄에 하나씩'}
+                aria-label="복지부 게시글 주소 (여러 줄)"
+                className="w-full rounded-md border border-gray-400/70 bg-gray-0 px-2.5 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 focus:outline-none"
+              />
               <Button type="submit" size="sm" icon={<Download className="size-3.5" />} loading={fromPost.isPending} disabled={!postLink.trim()}>
                 가져오기
               </Button>
+              {postFails.length > 0 && (
+                <Callout tone="danger">
+                  <ul className="space-y-0.5 text-xs">
+                    {postFails.map((f) => (
+                      <li key={f}>{f}</li>
+                    ))}
+                  </ul>
+                </Callout>
+              )}
               <p className="text-xs text-gray-500">
+                지난 1년 고시를 넣으려면 복지부 '훈령/예규/고시/지침' 게시판에서 「약제 급여 목록 및 급여 상한금액표」를 검색해, 글 주소를 한 줄에 하나씩 붙여 넣으세요 (한 번에 40개까지, 글마다 사이를 두고 받습니다).
                 자동 확인은 최근 게시글만 봅니다. 예전에 고시됐지만 시행일이 남은 인하(예: 제2025-188호의 2026.11.23. 시행분)는 그 게시글 주소를 넣어 가져오세요. 누를 때만 글 하나를 받습니다.
               </p>
             </form>
