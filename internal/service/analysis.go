@@ -156,7 +156,9 @@ func (s *Service) computePositions(ac *analysisCtx, codes []string, noticeDate s
 			add(c, sid)
 		}
 	}
-	rows.Close()
+	if err := closeRows(rows); err != nil {
+		return nil, err
+	}
 
 	// 2) 스캔 결과
 	rows, err = s.DB.Query("SELECT product_code, IFNULL(supplier_id, 0), match_status, registered, qty FROM scan_unit WHERE effective_date = ? AND product_code IN ("+in+")",
@@ -189,7 +191,9 @@ func (s *Service) computePositions(ac *analysisCtx, codes []string, noticeDate s
 			pc.scan.Unmatched++
 		}
 	}
-	rows.Close()
+	if err := closeRows(rows); err != nil {
+		return nil, err
+	}
 
 	// 3) 도매별 규칙·대상기간
 	type win struct{ from, to string }
@@ -251,7 +255,9 @@ func (s *Service) computePositions(ac *analysisCtx, codes []string, noticeDate s
 				sums[c][sid] = pr{domain.Qty(p), domain.Qty(r)}
 			}
 		}
-		rows.Close()
+		if err := closeRows(rows); err != nil {
+			return nil, err
+		}
 	}
 
 	// 5) FIFO 추정용 사입 이력 — 도매로의 반품(음수)도 함께: 반품한 약은 그 도매 몫에서 뺀다
@@ -268,7 +274,9 @@ func (s *Service) computePositions(ac *analysisCtx, codes []string, noticeDate s
 			lots[c] = append(lots[c], domain.PurchaseLot{Date: d, SupplierID: sid, Qty: domain.Qty(q)})
 		}
 	}
-	rows.Close()
+	if err := closeRows(rows); err != nil {
+		return nil, err
+	}
 
 	// 6) 품목별 포지션 조립
 	for _, code := range codes {
@@ -1088,3 +1096,13 @@ func (s *Service) ClearWindowOverride(eff string, supplierID int64) error {
 }
 
 var _ = store.Now
+
+// closeRows : 조회를 닫고, 읽는 도중 난 오류를 돌려준다.
+// 보상 계산에 쓰는 조회는 오류를 삼키면 안 된다 — 일부 행만 읽고 끝나면 사입 합계·보유 추정이 줄어 판정이 조용히 틀어진다.
+func closeRows(rows *sql.Rows) error {
+	err := rows.Err()
+	if cerr := rows.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}

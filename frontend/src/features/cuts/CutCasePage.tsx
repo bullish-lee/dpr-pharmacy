@@ -63,7 +63,8 @@ export function CutCasePage({ date }: { date: string }) {
         </Callout>
       )}
 
-      <div className="grid grid-cols-4 gap-3 max-[1180px]:grid-cols-2">
+      {/* 좁은 화면(1366×768 · 125%)에서도 손실 순위가 첫 화면에 보이게 요약·단계를 한 줄로 유지한다 */}
+      <div className="grid grid-cols-4 gap-3 max-[860px]:grid-cols-2">
         <Kpi label="보유 중인 인하 품목" value={data.totals.held} unit="개" sub={`인하 고시 ${data.totals.items}개 중`} />
         <Kpi label="예상 손실 (보상 전)" value={won(data.totals.grossLoss)} unit="원" />
         <Kpi label="예상 보상" value={won(data.totals.recovery)} unit="원" sub={`서류 ${data.totals.document} · 실물 검토 ${data.totals.physical}${data.totals.check ? ` · 실제가 확인 ${data.totals.check}` : ''}`} />
@@ -176,7 +177,7 @@ function TaskList({ data, heldRows }: { data: service.Ranking; heldRows: service
   }
   return (
     <Card pad={false}>
-      <ol className="grid grid-cols-6 divide-x divide-gray-100 max-[1180px]:grid-cols-1 max-[1180px]:divide-x-0 max-[1180px]:divide-y">
+      <ol className="grid grid-cols-6 divide-x divide-gray-100 max-[860px]:grid-cols-1 max-[860px]:divide-x-0 max-[860px]:divide-y">
         {tasks.map((t, i) => {
           const l = label[t.st]
           const inner = (
@@ -186,12 +187,12 @@ function TaskList({ data, heldRows }: { data: service.Ranking; heldRows: service
                 <span className="text-xs font-semibold text-gray-500">{i + 1}단계</span>
                 <span className={cx('ml-auto text-xs font-semibold', l.cls)}>{l.text}</span>
               </div>
-              <div className="mt-1.5 text-sm font-semibold text-gray-900">{t.title}</div>
-              <div className="mt-0.5 text-xs text-gray-600">{t.detail}</div>
+              <div className="mt-1.5 text-sm font-semibold text-gray-900 max-[1180px]:text-[0.8125rem]">{t.title}</div>
+              <div className="mt-0.5 text-xs text-gray-600 max-[1180px]:line-clamp-2">{t.detail}</div>
             </>
           )
           return (
-            <li key={t.title} className="px-4 py-3.5">
+            <li key={t.title} className="min-w-0 px-4 py-3.5 max-[1180px]:px-2.5 max-[1180px]:py-2.5" title={t.detail}>
               {t.to ? (
                 <a href={`#${t.to}`} className="block hover:opacity-80">
                   {inner}

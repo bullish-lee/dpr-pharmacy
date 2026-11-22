@@ -260,7 +260,8 @@ type NoticeView struct {
 
 func (s *Service) ListNotices() ([]NoticeView, error) {
 	rows, err := s.DB.Query(`SELECT id, source, IFNULL(list_no,''), notice_no, title, url, published_at, status, error, file_name, created_at, summary
-		FROM notice WHERE status <> 'duplicate' ORDER BY published_at DESC, id DESC`)
+		FROM notice WHERE status <> 'duplicate'
+		ORDER BY CASE WHEN source = 'history' THEN substr(list_no, 9) ELSE published_at END DESC, id DESC`) // 가격 이력(게시일 없음)은 시행일 자리에
 	if err != nil {
 		return nil, err
 	}

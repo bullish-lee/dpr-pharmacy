@@ -361,13 +361,23 @@ func (s *Service) CheckDrugMaster(ctx context.Context, force bool) (*MasterResul
 	if why != "" {
 		return fail(fmt.Errorf("%w: %s", errMasterRefused, why))
 	}
+	// 지난 1년 가격 변경을 이력으로 (받은 목록에 이미 들어 있는 자료 — 추가 요청 없음). 실패해도 목록 받기는 계속한다
+	histNote := ""
+	if n, downs, changed, herr := s.storePriceHistory(items, now); herr != nil {
+		s.Log.Warn("가격 이력 반영 실패", "err", herr)
+	} else if changed {
+		histNote = fmt.Sprintf(" 지난 %d개월 가격 변경 %s건(인하 %s건)을 이력으로 넣었습니다.", historyMonths, comma(n), comma(downs))
+	}
 	sha := shaHex([]byte(masterSHA(recs) + "|" + listDate + "|" + strconv.Itoa(len(dm.Changes)))) // 내용이 같아도 새 달 목록이면 적용일을 바꿔 둔다
 	var lastSHA string
 	_ = s.DB.QueryRow("SELECT sha256 FROM import_batch WHERE kind = 'drug_master' ORDER BY id DESC LIMIT 1").Scan(&lastSHA)
 	if lastSHA == sha {
 		done()
-		msg := fmt.Sprintf("약제급여목록이 그대로입니다 (%s품목, 적용일 %s)", comma(len(recs)), listDate)
+		msg := fmt.Sprintf("약제급여목록이 그대로입니다 (%s품목, 적용일 %s)", comma(len(recs)), listDate) + histNote
 		s.finishJob(job, "ok", msg)
+		if histNote != "" && s.OnDataChanged != nil {
+			s.OnDataChanged("notice")
+		}
 		return &MasterResult{Count: len(recs), ListDate: listDate, Message: msg}, nil
 	}
 	_, n, carried, cr, err := s.storeDrugMasterWith("공공데이터포털 약가기준정보 ("+listDate+")", sha, listDate, recs, 0, dm.Changes)
@@ -376,7 +386,7 @@ func (s *Service) CheckDrugMaster(ctx context.Context, force bool) (*MasterResul
 	}
 	done()
 	msg := fmt.Sprintf("약제급여목록 %s품목을 새로 받았습니다 (적용일 %s, 급여 중단 %s품목 제외). 단위 환산을 다시 계산했습니다.", comma(n), listDate, comma(dm.Removed)) +
-		carriedNote(carried) + codeChangeNote(cr)
+		carriedNote(carried) + codeChangeNote(cr) + histNote
 	if len(cr.Review) > 0 || len(cr.BothAnchors) > 0 {
 		s.notify("warn", "제품코드 변경 확인 필요", strings.TrimSpace(codeChangeNote(cr)), "inventory")
 	}
