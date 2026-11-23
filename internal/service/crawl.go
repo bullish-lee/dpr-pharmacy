@@ -329,6 +329,12 @@ func (s *Service) StartScheduler(ctx context.Context) {
 		case <-time.After(8 * time.Second):
 		}
 		s.AutoBackupIfDue()
+		// 프로그램에 넣어 둔 지난 1년 고시 (처음 한 번 — 인터넷 요청 없음)
+		if n, err := s.SeedPastNotices(); err != nil {
+			s.Log.Warn("지난 고시 넣기 실패", "err", err)
+		} else if n > 0 {
+			s.notify("info", "지난 고시를 넣었습니다", fmt.Sprintf("프로그램에 들어 있던 지난 1년 고시 %d건(인하·인상·신설·삭제·변경)을 넣었습니다. 고시 화면에서 볼 수 있습니다.", n), "notices")
+		}
 		if s.DB.GetSetting(SetCheckOnStart, "1") == "1" {
 			s.startupChecks(ctx)
 		}

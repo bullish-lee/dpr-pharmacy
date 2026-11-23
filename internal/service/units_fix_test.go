@@ -282,3 +282,33 @@ func TestCanonPackIgnoresReturnOnlyGroups(t *testing.T) {
 		t.Fatalf("포장 1개 = 1팩이어야 함: %v", canon)
 	}
 }
+
+// 고시 가격의 기준 단위가 도중에 바뀐 품목 (3mL/펜: mL 당 → 펜 당) — 옛 가격을 지금 기준으로 맞춘다.
+// 맞추지 않으면 기준이 바뀌기 전 기록의 수량이 3배 틀어진다.
+func TestNormalizeBasisChange(t *testing.T) {
+	r := &unitRef{pu: domain.ParsePriceUnit("3", "mL/펜"), hasUnit: true, master: 103000, steps: []priceStep{
+		{"2026-01-01", 38500, 38400},  // mL 당 (소폭 인하)
+		{"2026-07-01", 38400, 103000}, // 펜 당으로 바뀜 (3배의 −10%)
+	}}
+	r.normalizeBasis()
+	if got := r.priceAt("2026-03-01"); got != 38400*3 {
+		t.Fatalf("기준이 바뀌기 전 시점의 펜 당 가격: %v", got)
+	}
+	if got := r.priceAt("2025-12-01"); got != 38500*3 {
+		t.Fatalf("첫 변경 전: %v", got)
+	}
+	if got := r.priceAt("2026-08-01"); got != 103000 {
+		t.Fatalf("지금: %v", got)
+	}
+	// 보통의 큰 인상·인하(퇴장방지 인상 등)는 건드리지 않는다
+	r2 := &unitRef{pu: domain.ParsePriceUnit("1", "정"), hasUnit: true, steps: []priceStep{{"2026-06-01", 939, 1860}}}
+	r2.normalizeBasis()
+	if r2.steps[0].before != 939 {
+		t.Fatal("단위가 1인 품목은 그대로")
+	}
+	r3 := &unitRef{pu: domain.ParsePriceUnit("28", "정/팩"), hasUnit: true, steps: []priceStep{{"2025-12-01", 10393, 5565}}}
+	r3.normalizeBasis()
+	if r3.steps[0].before != 10393 {
+		t.Fatal("28정/팩 의 0.54배 인하는 기준 변경이 아니다")
+	}
+}

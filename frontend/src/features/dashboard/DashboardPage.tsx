@@ -81,7 +81,11 @@ export function DashboardPage() {
             </Empty>
           ) : (
             <div className="divide-y divide-gray-100">
-              {upcoming.map((u) => (
+              {/* 지난 1년 고시까지 들어 있어 회차가 많다 — 오늘과 가까운 회차 6개만 (나머지는 '전체 보기') */}
+              {[...upcoming]
+                .sort((a, b) => Math.abs(a.daysLeft) - Math.abs(b.daysLeft))
+                .slice(0, 6)
+                .map((u) => (
                 <button key={u.effectiveDate} onClick={() => navigate(paths.cut(u.effectiveDate))} className="flex w-full items-center gap-4 px-5 py-3.5 text-left hover:bg-gray-50">
                   <div className="flex w-24 shrink-0 flex-col">
                     <span className="num text-[0.9375rem] font-semibold">{dateDot(u.effectiveDate)}</span>

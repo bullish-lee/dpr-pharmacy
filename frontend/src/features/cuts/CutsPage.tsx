@@ -8,7 +8,8 @@ export function CutsPage() {
   const { data, isLoading, error, refetch } = useCutDates()
   if (isLoading) return <Skeleton rows={8} />
   if (error) return <ErrorBox error={error} onRetry={() => refetch()} />
-  const rows = data ?? []
+  // 오늘과 가까운 회차부터 (지난 1년 고시와 1~2년 뒤 시행 예정분까지 있어, 날짜순이면 먼 미래가 맨 위에 온다). 머리글을 누르면 날짜순 등으로 바뀐다
+  const rows = [...(data ?? [])].sort((a, b) => Math.abs(a.daysLeft) - Math.abs(b.daysLeft))
   return (
     <div>
       <PageHeader title="약가인하 대응" sub="시행일별로 보유 재고의 손실을 확인하고 도매 보상을 처리합니다." />
@@ -52,7 +53,6 @@ export function CutsPage() {
             ),
           },
         ]}
-        defaultSort={{ key: 'date', dir: 'desc' }}
       />
     </div>
   )

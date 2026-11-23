@@ -124,7 +124,42 @@ func loadUnitRefs(q querier, codes []string) (map[string]*unitRef, error) {
 		}
 	}
 	rows.Close()
+	for _, r := range refs {
+		r.normalizeBasis()
+	}
 	return refs, nil
+}
+
+// normalizeBasis : 고시 가격의 기준 단위가 도중에 바뀐 품목(예: 3mL/펜 — mL 당 가격 → 펜 당 가격)의 옛 가격을 지금 기준으로 맞춘다.
+// 규격·단위 글자는 그대로인데 상한금액만 '고시 1단위에 든 양'(Size)배쯤 뛰거나 그만큼 줄면 기준이 바뀐 것으로 본다 (±15%).
+// 맞추지 않으면 옛 가격을 지금 단위의 가격으로 읽어, 그 무렵 기록(초기재고·사입)의 수량이 Size 배 틀어진다.
+func (r *unitRef) normalizeBasis() {
+	n := r.pu.Size
+	if !r.hasUnit || n < 2 {
+		return
+	}
+	near := func(x, target float64) bool { return x > target*0.85 && x < target*1.15 }
+	for i := range r.steps {
+		st := &r.steps[i]
+		if st.before <= 0 || st.after <= 0 {
+			continue
+		}
+		k := 0.0
+		switch ratio := st.after / st.before; {
+		case near(ratio, n):
+			k = n // 낱 단위 가격 → 용기 가격
+		case near(ratio, 1/n):
+			k = 1 / n
+		}
+		if k == 0 {
+			continue
+		}
+		st.before *= k
+		for j := 0; j < i; j++ {
+			r.steps[j].before *= k
+			r.steps[j].after *= k
+		}
+	}
 }
 
 type unitGroup struct {
