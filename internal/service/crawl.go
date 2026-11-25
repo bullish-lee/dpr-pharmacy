@@ -329,6 +329,9 @@ func (s *Service) StartScheduler(ctx context.Context) {
 		case <-time.After(8 * time.Second):
 		}
 		s.AutoBackupIfDue()
+		if err := s.EnsureSettlePairs(); err != nil {
+			s.Log.Warn("보상 정산 쌍 표시 실패", "err", err)
+		}
 		// 프로그램에 넣어 둔 지난 1년 고시 (처음 한 번 — 인터넷 요청 없음)
 		if n, err := s.SeedPastNotices(); err != nil {
 			s.Log.Warn("지난 고시 넣기 실패", "err", err)

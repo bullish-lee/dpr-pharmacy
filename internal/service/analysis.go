@@ -240,7 +240,7 @@ func (s *Service) computePositions(ac *analysisCtx, codes []string, noticeDate s
 		qargs = append(qargs, args...)
 		rows, err := s.DB.Query(`SELECT supplier_id, product_code,
 			SUM(CASE WHEN kind = 'purchase' AND qty > 0 THEN qty ELSE 0 END), SUM(CASE WHEN kind = 'return' THEN -qty ELSE 0 END)
-			FROM purchase_line WHERE date BETWEEN ? AND ? AND supplier_id IN (`+sIn+`) AND product_code IN (`+in+`) GROUP BY supplier_id, product_code`, qargs...)
+			FROM purchase_line WHERE settle_pair = 0 AND date BETWEEN ? AND ? AND supplier_id IN (`+sIn+`) AND product_code IN (`+in+`) GROUP BY supplier_id, product_code`, qargs...)
 		if err != nil {
 			return nil, err
 		}
@@ -262,7 +262,7 @@ func (s *Service) computePositions(ac *analysisCtx, codes []string, noticeDate s
 
 	// 5) FIFO 추정용 사입 이력 — 도매로의 반품(음수)도 함께: 반품한 약은 그 도매 몫에서 뺀다
 	lots := map[string][]domain.PurchaseLot{}
-	rows, err = s.DB.Query("SELECT product_code, date, IFNULL(supplier_id, 0), qty FROM purchase_line WHERE ((kind = 'purchase' AND qty > 0) OR (kind = 'return' AND qty < 0)) AND date <= ? AND product_code IN ("+in+")",
+	rows, err = s.DB.Query("SELECT product_code, date, IFNULL(supplier_id, 0), qty FROM purchase_line WHERE settle_pair = 0 AND ((kind = 'purchase' AND qty > 0) OR (kind = 'return' AND qty < 0)) AND date <= ? AND product_code IN ("+in+")",
 		append([]any{ac.asOf}, args...)...)
 	if err != nil {
 		return nil, err

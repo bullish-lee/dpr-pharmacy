@@ -642,7 +642,8 @@ func recomputeUnits(q querier, codes []string) error {
 			return err
 		}
 	}
-	return nil
+	// 보상 정산 쌍(옛 가격 반품 → 새 가격 재사입) 표시 — 사입·고시가 바뀌면 다시 본다
+	return markSettlePairs(q, codes)
 }
 
 // summarizeUnits : 품목 전체 상태 — 확인 필요 > 사용자 지정 > 자동 환산 > 정상
