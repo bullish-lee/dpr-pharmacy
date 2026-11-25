@@ -3,10 +3,10 @@
 import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import * as App from '../../wailsjs/go/main/App'
-import type { domain, ingest, main, service } from '../../wailsjs/go/models'
+import type { domain, ingest, main, platform, service } from '../../wailsjs/go/models'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 
-export type { domain, ingest, main, service }
+export type { domain, ingest, main, platform, service }
 
 // 로컬 앱: 네트워크 상태와 무관하게 항상 실행, 창 포커스 시 재조회 안 함 (변경 시 명시적으로 무효화)
 export const queryClient = new QueryClient({

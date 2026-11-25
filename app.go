@@ -508,6 +508,15 @@ func (a *App) ListLots(code string) ([]service.LotView, error) { return a.svc.Li
 func (a *App) AddLot(in service.LotInput) (int64, error)       { return a.svc.AddLot(in) }
 func (a *App) DeleteLot(id int64) error                        { return a.svc.DeleteLot(id) }
 
+// CheckOCR : 설정 화면 '글자 인식 점검' — 점검 그림으로 이 PC 에서 글자 인식이 되는지 본다
+func (a *App) CheckOCR() platform.OCRCheck {
+	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
+	defer cancel()
+	c := platform.OCRSelfTest(ctx)
+	a.log.Info("글자 인식 점검", "ok", c.OK, "engine", c.Engine, "found", c.Found, "ms", c.Ms, "problem", c.Problem)
+	return c
+}
+
 // ImportNoticePosts : 게시글 주소·번호 여러 개(줄바꿈으로 나눔)를 차례로 가져오기 — 지난 1년 고시를 한 번에
 func (a *App) ImportNoticePosts(text string) (*service.NoticePostsResult, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Minute)

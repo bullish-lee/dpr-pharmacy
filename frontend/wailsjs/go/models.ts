@@ -387,6 +387,37 @@ export namespace main {
 
 }
 
+export namespace platform {
+	
+	export class OCRCheck {
+	    ok: boolean;
+	    powerShell: string;
+	    engine: string;
+	    korean: boolean;
+	    found: number;
+	    text: string;
+	    problem: string;
+	    ms: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new OCRCheck(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ok = source["ok"];
+	        this.powerShell = source["powerShell"];
+	        this.engine = source["engine"];
+	        this.korean = source["korean"];
+	        this.found = source["found"];
+	        this.text = source["text"];
+	        this.problem = source["problem"];
+	        this.ms = source["ms"];
+	    }
+	}
+
+}
+
 export namespace service {
 	
 	export class AnchorView {

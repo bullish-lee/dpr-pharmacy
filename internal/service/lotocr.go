@@ -127,6 +127,16 @@ func (s *Service) ReadLotPhoto(ctx context.Context, req LotPhotoRequest) (*LotPh
 	if len(res.Rows) == 0 && res.Note == "" {
 		res.Note = "사입 줄을 찾지 못했습니다. 사입일자·거래처·유효기간·제조번호 열이 보이게 다시 올려 주세요."
 	}
+	for _, r := range results {
+		if r.Warn == "no_korean" {
+			note := "이 PC 에 한국어 글자 인식이 없어 도매 이름은 읽지 못했습니다 — 도매를 직접 고르세요 (설정 → 시간 및 언어 → 언어에서 '한국어'를 추가하면 읽습니다)."
+			if res.Note != "" {
+				note += " " + res.Note
+			}
+			res.Note = note
+			break
+		}
+	}
 	return res, nil
 }
 

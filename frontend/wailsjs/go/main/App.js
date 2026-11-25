@@ -38,6 +38,10 @@ export function CheckFolder(arg1) {
   return window['go']['main']['App']['CheckFolder'](arg1);
 }
 
+export function CheckOCR() {
+  return window['go']['main']['App']['CheckOCR']();
+}
+
 export function CheckProductCode(arg1) {
   return window['go']['main']['App']['CheckProductCode'](arg1);
 }

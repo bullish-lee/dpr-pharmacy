@@ -1,7 +1,7 @@
 import { CalendarClock, FolderOpen, KeyRound } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { api, obj, useAction, useAppInfo, useJobs, useNotifications, useSettings, type service } from '../../app/api'
+import { api, obj, useAction, useAppInfo, useJobs, useNotifications, useSettings, type platform, type service } from '../../app/api'
 import { dateTime } from '../../app/format'
 import { DataTable } from '../../components/DataTable'
 import { Badge, Button, Callout, Card, Field, Input, PageHeader, Segmented, Switch } from '../../components/ui'
@@ -179,6 +179,7 @@ export function SettingsPage() {
             약가인하 회차 4단계에서 사입 이력 사진을 올리면 사입일자·사입도매·수량·유효기간·제조번호를 읽어 줍니다. Windows에 들어 있는 글자 인식(OCR)을 써서 비용이 들지 않고 사진을 인터넷으로 보내지 않습니다.
             Windows 설정 → 시간 및 언어 → 언어에 '한국어'가 있으면 됩니다. 이팜 화면을 캡처(Win+Shift+S)해 붙여 넣는 방법이 가장 정확하고, 휴대폰 사진은 제조번호를 자주 틀리게 읽으니 꼭 확인하세요.
           </p>
+          <OcrCheck />
         </Card>
 
         <Card title="꺼져 있어도 확인 (Windows 작업 스케줄러)">
@@ -392,5 +393,29 @@ function LogCard({ debug, saving, onDebug }: { debug: boolean; saving: boolean; 
         ))}
       </div>
     </Card>
+  )
+}
+
+// 글자 인식 점검: 가상 사입현황 표 그림을 이 PC 에서 읽어 본다 (실제 약국 자료 아님)
+function OcrCheck() {
+  const [res, setRes] = useState<platform.OCRCheck | null>(null)
+  const run = useAction(() => api.CheckOCR(), { success: (r) => (r.ok ? '글자 인식이 잘 됩니다' : '글자 인식에 문제가 있습니다 — 아래 내용을 확인하세요') })
+  return (
+    <div className="mt-3 space-y-2">
+      <Button size="sm" loading={run.isPending} onClick={() => run.mutate([], { onSuccess: setRes })}>
+        글자 인식 점검
+      </Button>
+      {res && (
+        <Callout tone={res.ok ? (res.korean ? 'info' : 'warn') : 'danger'}>
+          <div className="font-semibold">{res.ok ? `잘 됩니다 — 점검 그림의 제조번호 ${res.found}/3개를 읽었습니다 (${(res.ms / 1000).toFixed(1)}초)` : '글자 인식을 쓸 수 없습니다'}</div>
+          {res.problem && <div className="mt-1">{res.problem}</div>}
+          <div className="mt-1 text-xs text-gray-600">
+            PowerShell: {res.powerShell || '찾지 못함'} · 인식 언어: {res.engine || '—'}
+            {res.ok && !res.korean && ' (한국어 없음)'}
+          </div>
+          {!res.ok && <div className="mt-1 text-xs text-gray-600">이 화면을 캡처해 보내 주시면 원인을 찾을 수 있습니다. 그동안 사진 옆 표에 직접 입력해 저장할 수 있습니다.</div>}
+        </Callout>
+      )}
+    </div>
   )
 }
