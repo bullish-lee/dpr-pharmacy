@@ -60,6 +60,7 @@ jobs:
   windows-ocr:
     if: github.repository == 'bullish-lee/dpr-pharmacy'
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -71,6 +72,7 @@ jobs:
         id: ko
         shell: pwsh
         continue-on-error: true
+        timeout-minutes: 20 # Windows Update 에서 받느라 오래 걸리거나 멈출 수 있다
         run: |
           $name = 'Language.OCR~~~ko-KR~0.0.1.0'
           if ((Get-WindowsCapability -Online -Name $name).State -ne 'Installed') { Add-WindowsCapability -Online -Name $name | Out-Null }
