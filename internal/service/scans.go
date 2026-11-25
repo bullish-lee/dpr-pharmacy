@@ -328,6 +328,15 @@ func (s *Service) RecordScan(in ScanInput) (*ScanResult, error) {
 	default:
 		res.Message = "제조번호와 일치하는 사입 근거가 없습니다 — 사입 근거를 추가하거나 도매를 직접 지정하세요"
 	}
+	// 같은 일련번호(포장 하나)는 한 번만 보상된다 (협업 약사, 2026-11-25) — 다른 회차에서 이미 도매 앱에 등록한 포장이면 알린다.
+	// 두 번째 인하에도 다시 보상되는지는 아직 확인 중이라 막지는 않는다.
+	if g.Serial != "" {
+		var other string
+		if s.DB.QueryRow("SELECT effective_date FROM scan_unit WHERE gtin = ? AND serial = ? AND effective_date <> ? AND registered = 1 ORDER BY effective_date DESC LIMIT 1",
+			g.GTIN, g.Serial, in.EffectiveDate).Scan(&other) == nil {
+			res.Message += fmt.Sprintf(" · 주의: 이 포장(같은 일련번호)은 %s 회차에 이미 도매 앱에 등록했습니다 — 도매가 다시 받지 않을 수 있습니다", other)
+		}
+	}
 	return res, nil
 }
 

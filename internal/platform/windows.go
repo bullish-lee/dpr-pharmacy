@@ -26,7 +26,7 @@ func InstallCrawlTasks(exe string, times []string) (string, error) {
 	var made []string
 	for _, t := range times {
 		name := taskFolder + "crawl_" + strings.ReplaceAll(t, ":", "") // ASCII 이름: schtasks 출력이 CP949여도 해제 가능
-		cmd := hidden(exec.Command("schtasks", "/Create", "/F", "/TN", name, "/TR", fmt.Sprintf(`"%s" crawl`, exe), "/SC", "DAILY", "/ST", t))
+		cmd := hidden(exec.Command(systemTool("schtasks.exe"), "/Create", "/F", "/TN", name, "/TR", fmt.Sprintf(`"%s" crawl`, exe), "/SC", "DAILY", "/ST", t))
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return "", fmt.Errorf("작업 등록 실패(%s): %v %s", t, err, string(out))
 		}
@@ -36,7 +36,7 @@ func InstallCrawlTasks(exe string, times []string) (string, error) {
 }
 
 func RemoveCrawlTasks() error {
-	out, err := hidden(exec.Command("schtasks", "/Query", "/FO", "CSV", "/NH")).Output()
+	out, err := hidden(exec.Command(systemTool("schtasks.exe"), "/Query", "/FO", "CSV", "/NH")).Output()
 	if err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func RemoveCrawlTasks() error {
 		}
 		name := strings.Trim(f[0], "\" \r")
 		if strings.HasPrefix(name, taskFolder) {
-			_ = hidden(exec.Command("schtasks", "/Delete", "/F", "/TN", name)).Run()
+			_ = hidden(exec.Command(systemTool("schtasks.exe"), "/Delete", "/F", "/TN", name)).Run()
 		}
 	}
 	return nil
@@ -58,7 +58,7 @@ func Toast(title, body string) error {
 	return n.Push()
 }
 
-func OpenFolder(path string) error { return hidden(exec.Command("explorer", path)).Start() }
+func OpenFolder(path string) error { return hidden(exec.Command(explorerPath(), path)).Start() }
 
 var (
 	kernel32      = syscall.NewLazyDLL("kernel32.dll")

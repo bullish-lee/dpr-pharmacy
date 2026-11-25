@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, Check, CircleDashed, CircleDot, Search, TriangleAlert, Upload } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, errorText, queryClient, keys, useDeletions, useRanking, type service } from '../../app/api'
-import { dateDot, dateLong, dday, parseDate, pct, price, qty, todayISO, won, wonUnit } from '../../app/format'
+import { dateDot, dateLong, dayBefore, dday, parseDate, pct, price, qty, todayISO, won, wonUnit } from '../../app/format'
 import { Link, navigate, paths } from '../../app/router'
 import { DataTable } from '../../components/DataTable'
 import { Badge, Button, Callout, Card, Empty, ErrorBox, Input, Kbd, Kpi, PageHeader, Segmented, Skeleton, cx } from '../../components/ui'
@@ -110,6 +110,12 @@ export function CutCasePage({ date }: { date: string }) {
         <Callout tone="info">
           시행일이 지난 회차입니다. 여기 넣는 실계수는 <b>오늘({dateDot(todayISO())})</b> 날짜로 저장되어 재고 화면에 바로 반영됩니다. 이 회차의 손실·판정은 시행 전날({dateDot(data.asOf)}) 재고로
           계산합니다 — 오늘 센 수량은 다음 회차부터 판정에 씁니다.
+        </Callout>
+      )}
+      {tab === 'rank' && date >= todayISO() && (
+        // 협업 약사: 약은 시행 전날 영업을 마친 뒤 센다 (예: 12월 1일 시행 → 11월 30일 마감 후)
+        <Callout tone="info">
+          실계수는 <b>시행 전날({dateDot(dayBefore(date))}) 영업을 마친 뒤</b> 세어 넣으세요. 그 수량으로 손실·서류/실물 판정을 계산합니다.
         </Callout>
       )}
       {tab === 'rank' ? (

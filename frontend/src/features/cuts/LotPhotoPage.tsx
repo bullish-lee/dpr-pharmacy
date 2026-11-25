@@ -93,7 +93,8 @@ export function LotPhotoPage({ date }: { date: string }) {
         }))
         patchPhoto(id, { status: 'done', rows, result: res })
       } catch (e) {
-        patchPhoto(id, { status: 'error', error: errorText(e) })
+        // 직접 입력할 빈 줄 하나를 열어 둔다
+        patchPhoto(id, { status: 'error', error: errorText(e), rows: [{ key: nextKey(), date: '', supplierId: 0, supplierRaw: '', qty: '', expiry: '', lot: '', matched: '', unsure: [] }] })
       }
     }
   }
@@ -287,8 +288,13 @@ function PhotoCard({
 
           <div className="min-w-0 space-y-3">
             {photo.status === 'reading' && <Spinner label="글자를 읽는 중… (몇 초 걸립니다)" />}
-            {photo.status === 'error' && <Callout tone="danger">{photo.error}</Callout>}
-            {photo.status === 'done' && (
+            {photo.status === 'error' && (
+              <Callout tone="danger">
+                {photo.error}
+                <div className="mt-1 text-gray-700">왼쪽 사진을 보면서 아래 표에 직접 넣어도 됩니다 — 사진을 누르면 크게 보입니다.</div>
+              </Callout>
+            )}
+            {(photo.status === 'done' || photo.status === 'error') && (
               <>
                 {res?.note && <Callout tone="warn">{res.note}</Callout>}
                 <div className="overflow-x-auto">
@@ -363,7 +369,7 @@ function PhotoCard({
                     </tbody>
                   </table>
                 </div>
-                {rows.length === 0 && <Empty title="사입 줄을 찾지 못했습니다">사입일자·거래처·유효기간·제조번호 열이 보이게 다시 올리거나, 아래 '줄 추가'로 직접 넣으세요.</Empty>}
+                {rows.length === 0 && photo.status === 'done' && <Empty title="사입 줄을 찾지 못했습니다">사입일자·거래처·유효기간·제조번호 열이 보이게 다시 올리거나, 아래 '줄 추가'로 직접 넣으세요.</Empty>}
 
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
                   <span className="inline-flex items-center gap-1">

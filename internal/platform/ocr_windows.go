@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -36,7 +35,10 @@ func OCR(ctx context.Context, paths []string) ([]OCRResult, error) {
 		}
 		args = append(args, p)
 	}
-	cmd := hidden(exec.CommandContext(ctx, "powershell.exe", args...))
+	cmd, err := PowerShellCommand(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%w — %v. 사진 옆 표에 '줄 추가'로 직접 입력할 수 있습니다", ErrOCRUnavailable, err)
+	}
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
@@ -44,7 +46,11 @@ func OCR(ctx context.Context, paths []string) ([]OCRResult, error) {
 		if len(msg) > 300 {
 			msg = msg[:300]
 		}
-		return nil, fmt.Errorf("글자 인식(Windows OCR) 실행 실패: %v %s", err, msg)
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("글자 인식이 시간 안에 끝나지 않았습니다: %w", ctx.Err())
+		}
+		// 보안 프로그램·정책이 PowerShell 실행을 막은 경우 등 — 직접 입력으로 이어 갈 수 있게 알린다
+		return nil, fmt.Errorf("%w — PowerShell 실행 실패: %v %s. 사진 옆 표에 '줄 추가'로 직접 입력할 수 있습니다", ErrOCRUnavailable, err, msg)
 	}
 	raw := bytes.TrimSpace(bytes.TrimPrefix(out.Bytes(), []byte{0xEF, 0xBB, 0xBF}))
 	var res []OCRResult

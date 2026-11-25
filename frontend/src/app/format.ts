@@ -55,6 +55,14 @@ export function todayISO() {
   return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`
 }
 
+// 날짜(YYYY-MM-DD)의 하루 전
+export function dayBefore(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number)
+  const t = new Date(y, m - 1, d - 1)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`
+}
+
 export type Tone = 'gray' | 'blue' | 'amber' | 'green' | 'red' | 'outline'
 
 export const recommendation: Record<string, { label: string; tone: Tone; hint: string }> = {
