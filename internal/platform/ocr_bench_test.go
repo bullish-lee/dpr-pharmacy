@@ -39,9 +39,9 @@ type benchRow map[string]string
 
 func benchSampleRows() []benchRow {
 	return []benchRow{
-		{"date": "2026-11-14", "supplier": "가람도매", "qty": "30.00", "expiry": "20271031", "lot": "LOT-1001"},
-		{"date": "2026-09-18", "supplier": "나래도매", "qty": "100.00", "expiry": "20270930", "lot": "LOT-1002"},
-		{"date": "2026-07-21", "supplier": "다솜도매", "qty": "240.00", "expiry": "20270531", "lot": "LOT-1003"},
+		{"date": "2026-08-12", "supplier": "가람도매", "qty": "45.00", "expiry": "20280131", "lot": "LOT-1001"},
+		{"date": "2026-06-03", "supplier": "나래도매", "qty": "90.00", "expiry": "20271231", "lot": "LOT-1002"},
+		{"date": "2026-04-27", "supplier": "다솜도매", "qty": "150.00", "expiry": "20280430", "lot": "LOT-1003"},
 	}
 }
 

@@ -59,7 +59,7 @@ func TestCheckOCRResults(t *testing.T) {
 func TestSummarizeCheck(t *testing.T) {
 	line := func(s string) OCRLine { return OCRLine{Text: s} }
 	var c OCRCheck
-	summarizeCheck(&c, []OCRResult{{Engine: "ko", Lines: []OCRLine{line("2026-11-14 사입 가람도매 30.00 LOT-1001"), line("LOT-1002"), line("LOT-1003")}}})
+	summarizeCheck(&c, []OCRResult{{Engine: "ko", Lines: []OCRLine{line("2026-08-12 사입 가람도매 45.00 LOT-1001"), line("LOT-1002"), line("LOT-1003")}}})
 	if !c.OK || !c.Korean || c.Found != 3 || c.Engine != "ko" || c.Problem != "" {
 		t.Fatalf("한국어: %+v", c)
 	}
