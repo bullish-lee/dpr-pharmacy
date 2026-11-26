@@ -64,8 +64,14 @@ func OCR(ctx context.Context, paths []string) ([]OCRResult, error) {
 	return res, checkOCRResults(res)
 }
 
-// OCRSelfTest 는 점검 그림으로 글자 인식이 이 PC 에서 되는지 확인한다.
+// OCRSelfTest 는 점검 그림으로 글자 인식이 이 PC 에서 되는지 확인한다 — Windows 글자 인식과 보조 글자 인식(PaddleOCR) 둘 다.
 func OCRSelfTest(ctx context.Context) OCRCheck {
+	c := windowsOCRSelfTest(ctx)
+	c.Paddle = paddleSelfTest(ctx)
+	return c
+}
+
+func windowsOCRSelfTest(ctx context.Context) OCRCheck {
 	var c OCRCheck
 	p, err := PowerShellPath()
 	if err != nil {

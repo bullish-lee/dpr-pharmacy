@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -13,6 +14,30 @@ import (
 	"dpr/internal/platform"
 )
 
+// lotEngineModes : 실제 시험을 세 가지로 돌린다 — Windows 글자 인식만 · 두 엔진 견주기 · Windows 글자 인식이 안 될 때(PaddleOCR 만)
+var lotEngineModes = []struct {
+	name          string
+	paddle, noWin bool
+}{{"windows", false, false}, {"두엔진", true, false}, {"paddle만", true, true}}
+
+// useEngines : 이 시험에서 쓸 엔진을 정한다. PaddleOCR 을 쓸 수 없는 PC 면 건너뛴다 (CI 는 DPR_PADDLE_REQUIRE=1 로 실패 처리).
+func useEngines(t *testing.T, paddle, noWin bool) {
+	t.Helper()
+	oldP, oldW := paddleRunner, ocrRunner
+	t.Cleanup(func() { paddleRunner, ocrRunner = oldP, oldW })
+	if paddle {
+		if err := paddleAvailable(t); err != nil {
+			t.Fatal(err)
+		}
+		paddleRunner = platform.PaddleOCR
+	}
+	if noWin {
+		ocrRunner = func(ctx context.Context, paths []string) ([]platform.OCRResult, error) {
+			return nil, platform.ErrOCRUnavailable
+		}
+	}
+}
+
 // 실제 Windows 글자 인식으로 가상 사입현황 표 그림을 읽어 사입 근거 줄을 만든다 (PATH 를 비운 채로).
 // 한국어 글자 인식이 있는 PC(DPR_OCR_REQUIRE_KO=1)에서만 끝까지 확인한다.
 func TestReadLotPhotoRealOCR(t *testing.T) {
@@ -20,35 +45,46 @@ func TestReadLotPhotoRealOCR(t *testing.T) {
 		t.Skip("한국어 글자 인식이 있는 Windows 에서만 (DPR_OCR_REQUIRE_KO=1)")
 	}
 	t.Setenv("PATH", "")
-	s, err := NewTemp(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	seedSample(t, s)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-	res, err := s.ReadLotPhoto(ctx, LotPhotoRequest{Code: "900000010", ImageBase64: base64.StdEncoding.EncodeToString(platform.OCRSample())})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got []string
-	for _, r := range res.Rows {
-		got = append(got, r.Date+" "+r.SupplierName+" "+r.Lot+" "+r.Expiry)
-	}
-	t.Logf("note=%q\n%s", res.Note, strings.Join(got, "\n"))
-	want := map[string]string{"LOT-1001": "가람도매", "LOT-1002": "나래도매", "LOT-1003": "다솜도매"}
-	found := 0
-	for _, r := range res.Rows {
-		if sup, ok := want[r.Lot]; ok {
-			found++
-			if r.SupplierName != sup {
-				t.Errorf("%s: 도매 %q, 기대 %q", r.Lot, r.SupplierName, sup)
+	for _, mode := range lotEngineModes {
+		t.Run(mode.name, func(t *testing.T) {
+			if mode.paddle && os.Getenv("DPR_PADDLE_REQUIRE") != "1" {
+				if err := paddleAvailable(t); err != nil {
+					t.Skip(err)
+				}
 			}
-		}
-	}
-	if found != 3 {
-		t.Fatalf("제조번호 3개 중 %d개 읽음", found)
+			useEngines(t, mode.paddle, mode.noWin)
+			s, err := NewTemp(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			seedSample(t, s)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			start := time.Now()
+			res, err := s.ReadLotPhoto(ctx, LotPhotoRequest{Code: "900000010", ImageBase64: base64.StdEncoding.EncodeToString(platform.OCRSample())})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, r := range res.Rows {
+				got = append(got, r.Date+" "+r.SupplierName+" "+r.Lot+" "+r.Expiry+fmt.Sprintf(" 확인필요=%v 후보=%v", r.Unsure, r.Alt))
+			}
+			t.Logf("ms=%d note=%q\n%s", time.Since(start).Milliseconds(), res.Note, strings.Join(got, "\n"))
+			want := map[string]string{"LOT-1001": "가람도매", "LOT-1002": "나래도매", "LOT-1003": "다솜도매"}
+			found := 0
+			for _, r := range res.Rows {
+				if sup, ok := want[r.Lot]; ok {
+					found++
+					if r.SupplierName != sup {
+						t.Errorf("%s: 도매 %q, 기대 %q", r.Lot, r.SupplierName, sup)
+					}
+				}
+			}
+			if found != 3 {
+				t.Fatalf("제조번호 3개 중 %d개 읽음", found)
+			}
+		})
 	}
 }
 
@@ -89,50 +125,58 @@ func TestLotOCRHeaderlessRealOCR(t *testing.T) {
 			{"2026-06-30", "나래도매", "2029-10-31", "7286610", 120},
 		}},
 	}
-	for _, c := range cases {
-		t.Run(c.file, func(t *testing.T) {
-			raw, err := os.ReadFile("testdata/" + c.file)
-			if err != nil {
-				t.Fatal(err)
-			}
-			s := lotTestService(t) // 거래처만 등록 (사입현황이 없어 DB 맞추기는 하지 않는다 → 읽은 값 그대로 확인)
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-			defer cancel()
-			res, err := s.ReadLotPhoto(ctx, LotPhotoRequest{Code: "900000010", ImageBase64: base64.StdEncoding.EncodeToString(raw)})
-			if err != nil {
-				t.Fatal(err)
-			}
-			var got []string
-			for _, r := range res.Rows {
-				got = append(got, lotRowText(r)+" 확인필요="+strings.Join(r.Unsure, ","))
-			}
-			t.Logf("mode=%s skipped=%d note=%q\n%s\n--- 인식한 글자\n%s", res.Mode, res.Skipped, res.Note, strings.Join(got, "\n"), res.RawText)
-			if len(res.Rows) != len(c.rows) || res.Skipped != c.skipped {
-				t.Fatalf("줄 수 %d (기대 %d), 뺀 줄 %d (기대 %d)", len(res.Rows), len(c.rows), res.Skipped, c.skipped)
-			}
-			okLot, okDate, okSup, okQty := 0, 0, 0, 0
-			for i, w := range c.rows {
-				r := res.Rows[i]
-				if w.lot == "" && (r.Lot != "" || r.Expiry != "") {
-					t.Errorf("%d번째 줄: 빈 칸에 값이 들어감 (유효기간 %q, 제조번호 %q)", i+1, r.Expiry, r.Lot)
+	for _, mode := range lotEngineModes {
+		for _, c := range cases {
+			t.Run(mode.name+"/"+c.file, func(t *testing.T) {
+				if mode.paddle && os.Getenv("DPR_PADDLE_REQUIRE") != "1" {
+					if err := paddleAvailable(t); err != nil {
+						t.Skip(err)
+					}
 				}
-				if r.Lot == w.lot && r.Expiry == w.expiry {
-					okLot++
+				useEngines(t, mode.paddle, mode.noWin)
+				raw, err := os.ReadFile("testdata/" + c.file)
+				if err != nil {
+					t.Fatal(err)
 				}
-				if r.Date == w.date {
-					okDate++
+				s := lotTestService(t) // 거래처만 등록 (사입현황이 없어 DB 맞추기는 하지 않는다 → 읽은 값 그대로 확인)
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+				defer cancel()
+				res, err := s.ReadLotPhoto(ctx, LotPhotoRequest{Code: "900000010", ImageBase64: base64.StdEncoding.EncodeToString(raw)})
+				if err != nil {
+					t.Fatal(err)
 				}
-				if r.SupplierName == w.sup {
-					okSup++
+				var got []string
+				for _, r := range res.Rows {
+					got = append(got, lotRowText(r)+" 확인필요="+strings.Join(r.Unsure, ",")+fmt.Sprintf(" 후보=%v", r.Alt))
 				}
-				if r.Qty == w.qty {
-					okQty++
+				t.Logf("mode=%s skipped=%d note=%q\n%s\n--- 인식한 글자\n%s", res.Mode, res.Skipped, res.Note, strings.Join(got, "\n"), res.RawText)
+				if len(res.Rows) != len(c.rows) || res.Skipped != c.skipped {
+					t.Fatalf("줄 수 %d (기대 %d), 뺀 줄 %d (기대 %d)", len(res.Rows), len(c.rows), res.Skipped, c.skipped)
 				}
-			}
-			n := len(c.rows)
-			if okLot < n-1 || okDate < n-1 || okQty < n-1 || okSup < n-2 {
-				t.Fatalf("맞은 줄: 유효기간·제조번호 %d, 날짜 %d, 수량 %d, 도매 %d (전체 %d줄)", okLot, okDate, okQty, okSup, n)
-			}
-		})
+				okLot, okDate, okSup, okQty := 0, 0, 0, 0
+				for i, w := range c.rows {
+					r := res.Rows[i]
+					if w.lot == "" && (r.Lot != "" || r.Expiry != "") {
+						t.Errorf("%d번째 줄: 빈 칸에 값이 들어감 (유효기간 %q, 제조번호 %q)", i+1, r.Expiry, r.Lot)
+					}
+					if r.Lot == w.lot && r.Expiry == w.expiry {
+						okLot++
+					}
+					if r.Date == w.date {
+						okDate++
+					}
+					if r.SupplierName == w.sup {
+						okSup++
+					}
+					if r.Qty == w.qty {
+						okQty++
+					}
+				}
+				n := len(c.rows)
+				if okLot < n-1 || okDate < n-1 || okQty < n-1 || okSup < n-2 {
+					t.Fatalf("맞은 줄: 유효기간·제조번호 %d, 날짜 %d, 수량 %d, 도매 %d (전체 %d줄)", okLot, okDate, okQty, okSup, n)
+				}
+			})
+		}
 	}
 }

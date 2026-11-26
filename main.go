@@ -34,6 +34,10 @@ import (
 var assets embed.FS
 
 func main() {
+	// 보조 글자 인식(PaddleOCR)의 일꾼으로 실행된 것이면 그림만 읽고 끝낸다 (internal/platform/paddle.go)
+	if platform.RunPaddleWorker(os.Args) {
+		return
+	}
 	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
 		os.Exit(runCLI(os.Args[1:]))
 	}

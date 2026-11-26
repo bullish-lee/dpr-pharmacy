@@ -23,6 +23,7 @@ type OCRWord struct {
 	Y    float64 `json:"y"`
 	W    float64 `json:"w"`
 	H    float64 `json:"h"`
+	C    float64 `json:"c,omitempty"` // 확신 0~1 (PaddleOCR 만 — Windows 엔진은 알려 주지 않는다)
 }
 
 type OCRLine struct {
@@ -38,8 +39,10 @@ type OCRResult struct {
 	Lines  []OCRLine `json:"lines"`
 	Error  string    `json:"error,omitempty"`
 	Warn   string    `json:"warn,omitempty"`   // no_korean: 한국어 글자 인식이 없어 다른 언어로 읽음
-	Engine string    `json:"engine,omitempty"` // 쓴 인식 언어 (ko 등)
+	Engine string    `json:"engine,omitempty"` // 쓴 인식 언어 (ko 등). PaddleOCR 은 paddle-ko
 	Mode   string    `json:"mode,omitempty"`   // error = constrained 일 때 PowerShell 언어 모드
+	// Runtime : PaddleOCR 이 쓴 onnxruntime (내장 / Windows 기본)
+	Runtime string `json:"runtime,omitempty"`
 }
 
 // ErrOCRUnavailable : 이 PC 에서 OCR 을 쓸 수 없음 (Windows 가 아니거나 한국어 OCR 없음)
@@ -99,6 +102,8 @@ type OCRCheck struct {
 	Text       string `json:"text"`       // 인식한 글자 (앞부분)
 	Problem    string `json:"problem"`    // 안 될 때 이유와 할 일
 	Ms         int64  `json:"ms"`
+	// Paddle : 보조 글자 인식(PaddleOCR) 점검 결과. 안 돼도 Windows 글자 인식(OK)과는 상관없다
+	Paddle *PaddleCheck `json:"paddle,omitempty"`
 }
 
 // OCRSample 은 점검용 가상 사입현황 표 그림 (실제 약국 자료 아님): 가람·나래·다솜도매, LOT-1001~1003.

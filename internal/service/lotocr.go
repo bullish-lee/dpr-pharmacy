@@ -58,6 +58,10 @@ type LotPhotoRow struct {
 	Matched      string   `json:"matched"`      // 사입현황과 맞춘 방법: "date"(같은 날짜) | "order"(순서로 추정) | ""
 	Unsure       []string `json:"unsure"`       // 확신이 낮은 칸: date | supplier | qty | expiry | lot
 	DateRaw      string   `json:"-"`            // 사입일자 칸에서 읽은 숫자 (사입현황과 맞출 때 일부라도 쓴다)
+	// Alt : 두 글자 인식 엔진이 다르게 읽은 칸의 다른 쪽 값 (칸 이름 → 값, 도매가 등록된 거래처면 "supplierId" 에 번호).
+	// 화면이 두 후보를 나란히 보여 주고 사용자가 고른다 (lotocr_compare.go).
+	Alt map[string]string `json:"alt,omitempty"`
+	y   float64           // 원본 그림에서 줄의 세로 위치 (두 엔진의 줄을 짝지을 때)
 }
 
 type LotPhotoResult struct {
@@ -104,23 +108,37 @@ func (s *Service) ReadLotPhoto(ctx context.Context, req LotPhotoRequest) (*LotPh
 			return nil, err
 		}
 	}
-	start := time.Now()
-	results, err := ocrRunner(ctx, paths)
-	if err != nil {
-		return nil, err
+	// 보조 엔진(PaddleOCR)을 Windows 글자 인식과 함께 돌린다. 안 되면 Windows 결과만 쓴다 (lotocr_compare.go).
+	type paddleOut struct {
+		r  platform.OCRResult
+		ok bool
 	}
-	s.Log.Info("사입정보 사진 OCR", "mode", mode, "variants", len(variants), "ms", time.Since(start).Milliseconds())
+	pch := make(chan paddleOut, 1)
+	go func() {
+		r, ok := s.paddleRead(ctx, raw, dir)
+		pch <- paddleOut{r, ok}
+	}()
+	start := time.Now()
+	results, werr := ocrRunner(ctx, paths)
+	s.Log.Info("사입정보 사진 OCR", "mode", mode, "variants", len(variants), "ms", time.Since(start).Milliseconds(), "err", werr)
+	pd := <-pch
+	if werr != nil && !pd.ok {
+		return nil, werr
+	}
 
 	sup := s.supplierMatcher()
 	var parsed []parsedTable
 	for i, r := range results {
-		if i >= len(variants) {
+		if werr != nil || i >= len(variants) {
 			break
 		}
 		parsed = append(parsed, parseLotTable(r, variants[i].scale, sup))
 	}
 	res := mergeTables(parsed)
 	res.Mode = mode
+	if pd.ok {
+		combineEngines(res, parsed, parseLotTable(pd.r, 1, sup), werr != nil)
+	}
 	for i := range res.Rows {
 		res.Rows[i].Code = code
 	}
@@ -142,7 +160,7 @@ func (s *Service) ReadLotPhoto(ctx context.Context, req LotPhotoRequest) (*LotPh
 		}
 	}
 	for _, r := range results {
-		if r.Warn == "no_korean" {
+		if r.Warn == "no_korean" && !pd.ok { // 보조 엔진(한국어)이 읽었으면 도매 이름도 있다
 			note := "이 PC 에 한국어 글자 인식이 없어 도매 이름은 읽지 못했습니다 — 도매를 직접 고르세요 (설정 → 시간 및 언어 → 언어에서 '한국어'를 추가하면 읽습니다)."
 			if res.Note != "" {
 				note += " " + res.Note
@@ -150,6 +168,9 @@ func (s *Service) ReadLotPhoto(ctx context.Context, req LotPhotoRequest) (*LotPh
 			res.Note = note
 			break
 		}
+	}
+	for i := range res.Rows {
+		dropSameAlt(&res.Rows[i])
 	}
 	return res, nil
 }
@@ -1202,6 +1223,7 @@ func mergeTables(ts []parsedTable) *LotPhotoResult {
 	sort.SliceStable(all, func(i, j int) bool { return all[i].y < all[j].y })
 	res.Rows = res.Rows[:0]
 	for _, a := range all {
+		a.row.y = a.y
 		res.Rows = append(res.Rows, a.row)
 	}
 	return res
@@ -1291,8 +1313,8 @@ func unifyLots(rows []LotPhotoRow) {
 	}
 	for i := range rows {
 		cur := rows[i].Lot
-		if cur == "" || !isUnsure(rows[i], "lot") {
-			continue // 확실하게 읽은 값은 그대로
+		if cur == "" || !isUnsure(rows[i], "lot") || rows[i].Alt["lot"] != "" {
+			continue // 확실하게 읽은 값, 두 엔진이 다르게 읽은 값(사용자가 두 후보 중 고른다)은 그대로
 		}
 		best := ""
 		for l := range sure {
@@ -1328,7 +1350,7 @@ func unifyLots(rows []LotPhotoRow) {
 	for i := range rows {
 		r := &rows[i]
 		m := exp[r.Lot]
-		if r.Lot == "" || len(m) == 0 {
+		if r.Lot == "" || len(m) == 0 || r.Alt["expiry"] != "" {
 			continue
 		}
 		best, bc := "", 0
@@ -1458,6 +1480,10 @@ func (s *Service) alignWithPurchases(code string, rows []LotPhotoRow) {
 		setSure(r, "date")
 		setSure(r, "supplier")
 		setSure(r, "qty")
+		// 사입현황(엑셀) 값으로 바로잡은 칸은 두 엔진의 다른 후보가 의미 없다
+		for _, k := range []string{"date", "supplier", "supplierId", "qty"} {
+			delete(r.Alt, k)
+		}
 		if how == "order" {
 			r.Unsure = append(r.Unsure, "date")
 		}

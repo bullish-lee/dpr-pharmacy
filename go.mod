@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3
+	github.com/ebitengine/purego v0.11.3
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/wailsapp/wails/v2 v2.17.1
 	github.com/xuri/excelize/v2 v2.11.1

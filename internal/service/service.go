@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	_ "time/tzdata" // Windows 에서도 Asia/Seoul 시간대를 쓰기 위해 내장
 
@@ -81,6 +82,9 @@ type Service struct {
 	stdMu    sync.Mutex // 표준코드 확인 중복 방지
 	masterMu sync.Mutex // 약제급여목록 받기 중복 방지
 	updMu    sync.Mutex // 업데이트 확인 중복 방지
+	// paddleOff : 보조 글자 인식(PaddleOCR)이 실행되지 않거나 멈춘 적이 있으면 이번 실행 동안은 다시 부르지 않는다
+	// (사진마다 시간 초과를 기다리지 않게). 설정의 [글자 인식 점검]은 따로 확인한다.
+	paddleOff atomic.Bool
 	// AsyncRematch: 앱(화면)에서는 이름 재매칭을 가져오기 뒤 백그라운드로 돌려 응답을 빠르게 한다 (명령줄·테스트는 바로 실행)
 	AsyncRematch  bool
 	OnDataChanged func(what string)

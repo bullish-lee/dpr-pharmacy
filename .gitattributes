@@ -6,3 +6,7 @@
 *.ico binary
 *.xlsx binary
 *.woff2 binary
+# 글자 인식 모델·사전·onnxruntime (내용이 한 바이트도 바뀌면 안 된다 — 해시를 확인한다)
+*.onnx binary
+*.dll binary
+internal/platform/paddle/korean_dict.txt -text

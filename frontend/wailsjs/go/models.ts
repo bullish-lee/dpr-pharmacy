@@ -463,6 +463,30 @@ export namespace main {
 
 export namespace platform {
 	
+	export class PaddleCheck {
+	    ok: boolean;
+	    runtime: string;
+	    korean: boolean;
+	    found: number;
+	    text: string;
+	    problem: string;
+	    ms: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new PaddleCheck(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ok = source["ok"];
+	        this.runtime = source["runtime"];
+	        this.korean = source["korean"];
+	        this.found = source["found"];
+	        this.text = source["text"];
+	        this.problem = source["problem"];
+	        this.ms = source["ms"];
+	    }
+	}
 	export class OCRCheck {
 	    ok: boolean;
 	    powerShell: string;
@@ -472,6 +496,7 @@ export namespace platform {
 	    text: string;
 	    problem: string;
 	    ms: number;
+	    paddle?: PaddleCheck;
 	
 	    static createFrom(source: any = {}) {
 	        return new OCRCheck(source);
@@ -487,7 +512,26 @@ export namespace platform {
 	        this.text = source["text"];
 	        this.problem = source["problem"];
 	        this.ms = source["ms"];
+	        this.paddle = this.convertValues(source["paddle"], PaddleCheck);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }
@@ -1558,6 +1602,7 @@ export namespace service {
 	    lot: string;
 	    matched: string;
 	    unsure: string[];
+	    alt?: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new LotPhotoRow(source);
@@ -1575,6 +1620,7 @@ export namespace service {
 	        this.lot = source["lot"];
 	        this.matched = source["matched"];
 	        this.unsure = source["unsure"];
+	        this.alt = source["alt"];
 	    }
 	}
 	export class LotPhotoResult {

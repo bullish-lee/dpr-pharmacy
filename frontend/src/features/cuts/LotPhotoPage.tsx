@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, ArrowUpToLine, Camera, Check, ChevronDown, ImageIcon, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, ArrowRight, ArrowUpToLine, Camera, Check, ChevronDown, ImageIcon, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { api, errorText, keys, obj, useAction, useRanking, useSuppliers, type service } from '../../app/api'
@@ -25,7 +25,10 @@ type Draft = {
   lot: string
   matched: string
   unsure: string[]
+  /** 두 글자 인식 엔진이 다르게 읽은 칸의 다른 쪽 값 (칸 → 값, 도매는 supplierId 도) */
+  alt: Record<string, string>
 }
+type AltField = 'date' | 'supplier' | 'qty' | 'expiry' | 'lot'
 type Photo = {
   id: number
   name: string
@@ -42,7 +45,7 @@ type Photo = {
 let seq = 1
 const nextKey = () => seq++
 /** 글자 인식이 안 될 때 직접 입력할 빈 줄 */
-const blankDraft = (): Draft => ({ key: nextKey(), date: '', supplierId: 0, supplierRaw: '', qty: '', expiry: '', lot: '', matched: '', unsure: [] })
+const blankDraft = (): Draft => ({ key: nextKey(), date: '', supplierId: 0, supplierRaw: '', qty: '', expiry: '', lot: '', matched: '', unsure: [], alt: {} })
 
 const toDrafts = (res?: service.LotPhotoResult | null): Draft[] =>
   (res?.rows ?? []).map((r) => ({
@@ -55,6 +58,7 @@ const toDrafts = (res?: service.LotPhotoResult | null): Draft[] =>
     lot: r.lot,
     matched: r.matched,
     unsure: r.unsure ?? [],
+    alt: r.alt ?? {},
   }))
 
 export const useLotEvidence = (codes: string[]) =>
@@ -347,6 +351,31 @@ function PhotoCard({
   const unsureCount = rows.reduce((s, r) => s + r.unsure.length, 0)
   const res = photo.result
   const isU = (r: Draft, f: string) => r.unsure.includes(f)
+  // 다른 엔진이 읽은 값으로 바꾼다 — 지금 값은 후보로 남겨 다시 누르면 되돌린다
+  const pickAlt = (r: Draft, f: AltField) => {
+    const v = r.alt[f]
+    if (v == null) return
+    const alt = { ...r.alt }
+    if (f === 'supplier') {
+      alt.supplier = suppliers.find((x) => x.id === r.supplierId)?.name ?? r.supplierRaw
+      alt.supplierId = r.supplierId ? String(r.supplierId) : ''
+      set(r.key, f, { supplierId: Number(r.alt.supplierId || 0), supplierRaw: v, alt })
+      return
+    }
+    alt[f] = r[f]
+    set(r.key, f, { [f]: v, alt })
+  }
+  const altChip = (r: Draft, f: AltField, show: (v: string) => string = (v) => v) =>
+    r.alt[f] ? (
+      <button
+        type="button"
+        className="mt-0.5 flex max-w-full items-center gap-1 truncate rounded bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-800 hover:bg-violet-100"
+        title="두 글자 인식(Windows 기본 · PaddleOCR)이 다르게 읽었습니다. 사진과 비교해 맞는 쪽을 고르세요 — 누르면 이 값으로 바뀌고, 다시 누르면 되돌립니다"
+        onClick={() => pickAlt(r, f)}
+      >
+        <ArrowLeftRight className="size-3 shrink-0" /> {show(r.alt[f])}
+      </button>
+    ) : null
 
   return (
     <Card
@@ -414,16 +443,20 @@ function PhotoCard({
                         <tr key={r.key} className="border-b border-gray-100 align-top">
                           <td className="py-1.5 pr-2">
                             <Input type="date" value={dateInput(r.date)} onChange={(e) => set(r.key, 'date', { date: e.target.value })} className={cx('w-[140px]', isU(r, 'date') && unsureCls)} />
+                            {altChip(r, 'date', dateDot)}
                           </td>
                           <td className="px-2 py-1.5">
                             <SupplierSelect value={r.supplierId} suppliers={suppliers} unsure={isU(r, 'supplier')} onChange={(id) => set(r.key, 'supplier', { supplierId: id })} />
                             {r.supplierRaw && !r.supplierId && <div className="mt-0.5 truncate text-xs text-red-700">읽은 글자: {r.supplierRaw}</div>}
+                            {altChip(r, 'supplier')}
                           </td>
                           <td className="px-2 py-1.5">
                             <Input value={r.qty} inputMode="decimal" onChange={(e) => set(r.key, 'qty', { qty: e.target.value })} className={cx('num w-20 text-right', isU(r, 'qty') && unsureCls)} />
+                            {altChip(r, 'qty')}
                           </td>
                           <td className="px-2 py-1.5">
                             <Input type="date" value={dateInput(r.expiry)} onChange={(e) => set(r.key, 'expiry', { expiry: e.target.value })} className={cx('w-[140px]', isU(r, 'expiry') && unsureCls)} />
+                            {altChip(r, 'expiry', dateDot)}
                           </td>
                           <td className="px-2 py-1.5">
                             <Input
@@ -431,6 +464,7 @@ function PhotoCard({
                               onChange={(e) => set(r.key, 'lot', { lot: e.target.value.toUpperCase() })}
                               className={cx('code w-32 font-semibold', !r.lot.trim() ? 'border-red-600' : isU(r, 'lot') && unsureCls)}
                             />
+                            {altChip(r, 'lot')}
                           </td>
                           <td className="px-2 py-1.5 pt-3.5 text-xs whitespace-nowrap">
                             {r.matched === 'date' ? (
@@ -453,7 +487,7 @@ function PhotoCard({
                                 className="mt-2 mr-2 text-gray-400 hover:text-blue-600"
                                 title="윗줄의 유효기간·제조번호를 그대로 쓰기 (같은 제조번호를 여러 번 사입한 경우)"
                                 onClick={() =>
-                                  setRows(rows.map((x) => (x.key === r.key ? { ...x, expiry: rows[i - 1].expiry, lot: rows[i - 1].lot, unsure: x.unsure.filter((u) => u !== 'lot' && u !== 'expiry') } : x)))
+                                  setRows(rows.map((x) => (x.key === r.key ? { ...x, expiry: rows[i - 1].expiry, lot: rows[i - 1].lot, unsure: x.unsure.filter((u) => u !== 'lot' && u !== 'expiry'), alt: Object.fromEntries(Object.entries(x.alt).filter(([k]) => k !== 'lot' && k !== 'expiry')) } : x)))
                                 }
                               >
                                 <ArrowUpToLine className="size-4" />
@@ -480,6 +514,12 @@ function PhotoCard({
                   <span className="inline-flex items-center gap-1">
                     <ArrowUpToLine className="size-3.5" /> = 윗줄 제조번호·유효기간 복사
                   </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-flex items-center gap-0.5 rounded bg-violet-50 px-1 text-violet-800">
+                      <ArrowLeftRight className="size-3" /> 값
+                    </span>
+                    = 다른 글자 인식이 읽은 값 (누르면 바꿈)
+                  </span>
                 </div>
 
                 {res?.rawText && (
@@ -495,7 +535,7 @@ function PhotoCard({
                   <Button
                     size="sm"
                     icon={<Plus className="size-3.5" />}
-                    onClick={() => setRows([...rows, { key: nextKey(), date: '', supplierId: 0, supplierRaw: '', qty: '', expiry: '', lot: '', matched: '', unsure: [] }])}
+                    onClick={() => setRows([...rows, { key: nextKey(), date: '', supplierId: 0, supplierRaw: '', qty: '', expiry: '', lot: '', matched: '', unsure: [], alt: {} }])}
                   >
                     줄 추가
                   </Button>

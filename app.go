@@ -518,6 +518,9 @@ func (a *App) CheckOCR() platform.OCRCheck {
 	defer cancel()
 	c := platform.OCRSelfTest(ctx)
 	a.log.Info("글자 인식 점검", "ok", c.OK, "engine", c.Engine, "found", c.Found, "ms", c.Ms, "problem", c.Problem)
+	if p := c.Paddle; p != nil {
+		a.log.Info("보조 글자 인식 점검", "ok", p.OK, "runtime", p.Runtime, "found", p.Found, "ms", p.Ms, "problem", p.Problem)
+	}
 	return c
 }
 

@@ -177,7 +177,7 @@ export function SettingsPage() {
 
         <Card title="사입정보 사진 판독">
           <p className="text-[0.8125rem] text-gray-600">
-            약가인하 회차 3단계(손실 순위 표에서 실계수 입력 후 약품 오른쪽 화살표)에서 사입 이력 사진을 올리면 사입일자·사입도매·수량·유효기간·제조번호를 읽어 줍니다. Windows에 들어 있는 글자 인식(OCR)을 써서 비용이 들지 않고 사진을 인터넷으로 보내지 않습니다.
+            약가인하 회차 3단계(손실 순위 표에서 실계수 입력 후 약품 오른쪽 화살표)에서 사입 이력 사진을 올리면 사입일자·사입도매·수량·유효기간·제조번호를 읽어 줍니다. 글자 인식 두 가지(Windows 기본 + 프로그램에 든 PaddleOCR)로 함께 읽어 칸마다 견주고, 다르게 읽은 칸은 두 값을 보여 주어 고르게 합니다. 모두 이 PC 안에서만 돌아 비용이 들지 않고 사진을 인터넷으로 보내지 않습니다.
             Windows 설정 → 시간 및 언어 → 언어에 '한국어'가 있으면 됩니다. 이팜 화면을 캡처(Win+Shift+S)해 붙여 넣는 방법이 가장 정확하고, 휴대폰 사진은 제조번호를 자주 틀리게 읽으니 꼭 확인하세요.
           </p>
           <OcrCheck />
@@ -418,6 +418,14 @@ function OcrCheck() {
             PowerShell: {res.powerShell || '찾지 못함'} · 인식 언어: {res.engine || '—'}
             {res.ok && !res.korean && ' (한국어 없음)'}
           </div>
+          {res.paddle && (
+            <div className="mt-1 text-xs text-gray-600">
+              보조 글자 인식(PaddleOCR):{' '}
+              {res.paddle.ok
+                ? `잘 됩니다 — 제조번호 ${res.paddle.found}/3개 (${(res.paddle.ms / 1000).toFixed(1)}초, ${res.paddle.runtime || '—'})`
+                : `쓸 수 없습니다 — ${res.paddle.problem}`}
+            </div>
+          )}
           {!res.ok && <div className="mt-1 text-xs text-gray-600">이 화면을 캡처해 보내 주시면 원인을 찾을 수 있습니다. 그동안 사진 옆 표에 직접 입력해 저장할 수 있습니다.</div>}
         </Callout>
       )}
