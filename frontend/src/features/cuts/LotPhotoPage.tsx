@@ -472,7 +472,7 @@ function PhotoCard({
                                 ✓ 일치
                               </span>
                             ) : r.matched === 'order' ? (
-                              <span className="text-amber-700" title="날짜를 정확히 못 읽어 도매·순서로 사입 기록을 짐작했습니다. 날짜를 사진과 비교하세요">
+                              <span className="text-amber-700" title="날짜를 정확히 못 읽어 도매·순서로 사입 기록을 짐작했습니다. 노란 칸(날짜, 사진에서 못 읽은 도매)을 사진과 비교하세요">
                                 추정
                               </span>
                             ) : (
@@ -506,7 +506,7 @@ function PhotoCard({
 
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
                   <span className="inline-flex items-center gap-1">
-                    <span className="inline-block size-3 rounded-sm border border-amber-500 bg-amber-50" /> 노란 칸 = 글자가 흐려 확신이 낮음 ({unsureCount}칸)
+                    <span className="inline-block size-3 rounded-sm border border-amber-500 bg-amber-50" /> 노란 칸 = 글자가 흐리거나 순서로 짐작해 확신이 낮음 ({unsureCount}칸)
                   </span>
                   <span>
                     <span className="text-green-700">✓ 일치</span> = 날짜·도매·수량을 이미 가져온 사입현황 값으로 채움

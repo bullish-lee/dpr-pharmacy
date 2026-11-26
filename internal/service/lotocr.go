@@ -21,7 +21,7 @@ import (
 	"image"
 	"image/color"
 	_ "image/gif"
-	_ "image/jpeg"
+	"image/jpeg"
 	"image/png"
 	"math"
 	"os"
@@ -90,6 +90,18 @@ func (s *Service) ReadLotPhoto(ctx context.Context, req LotPhotoRequest) (*LotPh
 	if err != nil {
 		return nil, errors.New("사진 형식을 읽지 못했습니다 (JPG·PNG 로 올려 주세요. 아이폰 HEIC 는 JPG 로 바꿔 주세요)")
 	}
+	// 세로로 찍은 휴대폰 사진: 화소는 누워 있고 방향 표시만 붙어 있다 → 바로 세운다 (lotocr_exif.go).
+	// 보조 엔진에도 바로 세운 그림을 준다 — 두 엔진의 좌표가 같아야 줄을 짝짓는다. 방향 표시가 없으면 올린 파일 그대로.
+	paddleSrc := raw
+	if o := exifOrientation(raw); o > 1 {
+		src = orientImage(src, o)
+		var buf bytes.Buffer
+		if err := jpeg.Encode(&buf, src, &jpeg.Options{Quality: 95}); err != nil {
+			return nil, err
+		}
+		paddleSrc = buf.Bytes()
+		s.Log.Info("사입정보 사진을 방향 표시대로 바로 세움", "orientation", o)
+	}
 
 	variants, mode := ocrVariants(src)
 	dir, err := os.MkdirTemp("", "dpr-lotocr-")
@@ -115,7 +127,7 @@ func (s *Service) ReadLotPhoto(ctx context.Context, req LotPhotoRequest) (*LotPh
 	}
 	pch := make(chan paddleOut, 1)
 	go func() {
-		r, ok := s.paddleRead(ctx, raw, dir)
+		r, ok := s.paddleRead(ctx, paddleSrc, dir)
 		pch <- paddleOut{r, ok}
 	}()
 	start := time.Now()
@@ -1426,6 +1438,10 @@ func dateConflict(r LotPhotoRow, p purchaseRef) bool {
 // alignWithPurchases : 같은 약품의 사입현황(DB)과 줄을 맞춰 날짜·도매·수량은 DB 값을 쓴다.
 // 화면과 DB 모두 날짜 내림차순이므로 순서를 지키는 짝짓기(동적 계획법)로 가장 잘 맞는 짝을 고른다.
 // 그래서 날짜를 제대로 못 읽어도 도매 순서와 읽은 숫자 일부로 어느 사입인지 찾는다.
+//
+// 똑같이 잘 맞는 짝이 여럿이면 더 최근(위쪽) 사입을 고른다 — 화면은 최근 사입부터 보여 주고, 엑셀에는 화면 아래로 더 옛 사입이 있다.
+// 사진에서 도매를 못 읽은 줄을 날짜 근거 없이 순서로만 짝지었으면 그 도매는 짐작이다 → '확인 필요'로 둔다
+// (줄 하나를 놓치면 그 아래 줄들이 한 칸씩 밀려 제조번호가 다른 도매에 붙는다).
 func (s *Service) alignWithPurchases(code string, rows []LotPhotoRow) {
 	if len(rows) == 0 {
 		return
@@ -1470,6 +1486,13 @@ func (s *Service) alignWithPurchases(code string, rows []LotPhotoRow) {
 		if r.Date == p.date {
 			how = "date"
 		}
+		// 도매를 믿을 근거: 같은 날짜이거나, 도매를 빼고 날짜 숫자(와 수량)만으로도 짝이 되는 사입.
+		// 근거가 없는데 (1) 사진에서 도매를 못 읽어 순서로만 채웠거나 (2) 두 엔진이 서로 다른 거래처로 읽은 도매로 짝지었으면
+		// 그 도매는 확인된 것이 아니다 → '확인 필요'로 두고 다른 후보도 남긴다.
+		bare := *r
+		bare.SupplierID = 0
+		dated := how == "date" || pairScore(bare, p) >= minPair
+		doubt := !dated && p.supplier > 0 && (r.SupplierID == 0 || r.Alt["supplierId"] != "")
 		r.Date, r.Matched = p.date, how
 		if p.supplier > 0 {
 			r.SupplierID, r.SupplierName = p.supplier, p.name
@@ -1481,11 +1504,18 @@ func (s *Service) alignWithPurchases(code string, rows []LotPhotoRow) {
 		setSure(r, "supplier")
 		setSure(r, "qty")
 		// 사입현황(엑셀) 값으로 바로잡은 칸은 두 엔진의 다른 후보가 의미 없다
-		for _, k := range []string{"date", "supplier", "supplierId", "qty"} {
+		for _, k := range []string{"date", "qty"} {
 			delete(r.Alt, k)
 		}
 		if how == "order" {
 			r.Unsure = append(r.Unsure, "date")
+		}
+		if doubt {
+			r.Unsure = append(r.Unsure, "supplier")
+		}
+		if !doubt || r.Alt["supplierId"] == "" { // 등록된 거래처로 읽은 후보만 남긴다 (알아보지 못한 글자는 후보가 못 된다)
+			delete(r.Alt, "supplier")
+			delete(r.Alt, "supplierId")
 		}
 	}
 	match := make([]int, n)
@@ -1495,13 +1525,13 @@ func (s *Service) alignWithPurchases(code string, rows []LotPhotoRow) {
 	for i, j := n, m; i > 0 && j > 0; {
 		sc := pairScore(rows[i-1], refs[j-1])
 		switch {
+		case dp[i][j] == dp[i][j-1]:
+			j-- // 이 사입이 없어도 점수가 같다 → 더 최근(위쪽) 사입과 짝짓는다
 		case sc >= minPair && !dateConflict(rows[i-1], refs[j-1]) && math.Abs(dp[i][j]-(dp[i-1][j-1]+sc)) < 1e-9:
 			match[i-1] = j - 1
 			i, j = i-1, j-1
-		case dp[i][j] == dp[i-1][j]:
-			i--
 		default:
-			j--
+			i--
 		}
 	}
 	// 맞춘 줄 사이에 못 맞춘 줄이 남으면, 그 사이의 사입 중에서 순서를 지키며 느슨하게 짝짓는다
@@ -1547,13 +1577,13 @@ func (s *Service) alignWithPurchases(code string, rows []LotPhotoRow) {
 			for a, b := len(gr), len(gp); a > 0 && b > 0; {
 				sc, ok := soft(a-1, b-1)
 				switch {
+				case g[a][b] == g[a][b-1]:
+					b-- // 같은 점수면 더 최근(위쪽) 사입
 				case ok && math.Abs(g[a][b]-(g[a-1][b-1]+sc)) < 1e-9:
 					match[i+a-1] = lo + b
 					a, b = a-1, b-1
-				case g[a][b] == g[a-1][b]:
-					a--
 				default:
-					b--
+					a--
 				}
 			}
 		}

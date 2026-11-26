@@ -117,7 +117,7 @@ func TestLotOCRPaddleOnly(t *testing.T) {
 func TestLotOCRAltDroppedAfterAlign(t *testing.T) {
 	r := LotPhotoRow{Date: "2026-03-25", Qty: 30, Lot: "A1", Alt: map[string]string{"date": "2026-03-26", "qty": "3", "lot": "A7", "supplier": "나래도매", "supplierId": "2"}}
 	for _, k := range []string{"date", "supplier", "supplierId", "qty"} {
-		delete(r.Alt, k) // alignWithPurchases 의 apply 와 같은 처리
+		delete(r.Alt, k) // alignWithPurchases 의 apply 가 같은 날짜로 맞춘 줄에 하는 처리
 	}
 	dropSameAlt(&r)
 	if len(r.Alt) != 1 || r.Alt["lot"] != "A7" {

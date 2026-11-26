@@ -261,7 +261,7 @@ export function PhoneApp() {
             </div>
           </div>
 
-          <BigButton icon={<Camera className="size-7" />} title="① 사입정보 사진 찍기" sub="이팜 사입현황 화면·거래명세서 (유효기간·제조번호가 보이게)" onClick={() => lotInput.current?.click()} />
+          <BigButton icon={<Camera className="size-7" />} title="① 사입정보 사진 찍기" sub="거래명세서 같은 종이 사입 내역 (유효기간·제조번호가 보이게). 이팜 화면은 PC 에서 캡처(Win+Shift+S)해 붙여 넣는 쪽이 정확합니다" onClick={() => lotInput.current?.click()} />
           <button className="-mt-1 w-full text-center text-sm font-medium text-blue-700" onClick={() => lotGallery.current?.click()}>
             <ImageIcon className="mr-1 inline size-4" />
             이미 찍은 사진(갤러리)에서 고르기

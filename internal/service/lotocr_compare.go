@@ -40,6 +40,7 @@ type lotEngineRow struct {
 
 // paddleRead 는 올린 사진(JPG·PNG 파일 내용 그대로)을 PaddleOCR 로 읽는다 — 손질하지 않아 좌표가 원본과 같다 (scale 1).
 // 다시 PNG 로 저장하지 않는다 (3200×2400 사진에서 0.75초가 걸렸다).
+// 방향 표시가 붙은 누운 사진만 ReadLotPhoto 가 바로 세워 JPEG 로 다시 만든 것을 받는다.
 // 쓸 수 없거나 실패하면 ok=false: 기록만 남기고, 부르는 쪽은 Windows 글자 인식만으로 계속한다.
 func (s *Service) paddleRead(ctx context.Context, raw []byte, dir string) (res platform.OCRResult, ok bool) {
 	if s.paddleOff.Load() {
