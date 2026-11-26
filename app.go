@@ -28,6 +28,8 @@ type App struct {
 	cancel context.CancelFunc
 	svc    *service.Service
 	log    *slog.Logger
+	phone  phoneHub   // 휴대폰 연결 (phone.go)
+	relay  relayState // 외부 중계 — 모바일 데이터·약국 밖 (relay.go)
 }
 
 func NewApp(svc *service.Service, log *slog.Logger) *App { return &App{svc: svc, log: log} }
@@ -55,6 +57,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.applyWindowTheme(a.svc.GetSettings().Theme)
 	a.svc.StartScheduler(bg)
+	a.phoneAutoStart()
 }
 
 // SetUIPrefs : 글자 크기·테마를 바로 바꾼다 (창 테두리·배경색도 함께)
@@ -221,6 +224,7 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.cancel != nil {
 		a.cancel()
 	}
+	a.stopPhone()
 }
 
 func (a *App) onSecondInstance(_ options.SecondInstanceData) {
@@ -528,7 +532,7 @@ func (a *App) ImportNoticePosts(text string) (*service.NoticePostsResult, error)
 	return res, err
 }
 
-// ── 사입정보 사진 판독 (회차 4단계) ─────────────────────────────
+// ── 사입정보 사진 판독 (회차 3단계) ─────────────────────────────
 
 // ReadLotPhoto : 사입정보 사진 1장을 Windows 기본 OCR(무료·오프라인)로 판독한다 (저장하지 않음 — 화면에서 확인·수정한 뒤 SaveLotPhotoRows)
 func (a *App) ReadLotPhoto(req service.LotPhotoRequest) (*service.LotPhotoResult, error) {

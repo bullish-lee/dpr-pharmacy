@@ -114,6 +114,10 @@ export function DeleteSupplier(arg1) {
   return window['go']['main']['App']['DeleteSupplier'](arg1);
 }
 
+export function DismissPhoneItem(arg1) {
+  return window['go']['main']['App']['DismissPhoneItem'](arg1);
+}
+
 export function DrugInfo(arg1) {
   return window['go']['main']['App']['DrugInfo'](arg1);
 }
@@ -250,6 +254,14 @@ export function ParseBarcode(arg1) {
   return window['go']['main']['App']['ParseBarcode'](arg1);
 }
 
+export function PhoneInbox(arg1) {
+  return window['go']['main']['App']['PhoneInbox'](arg1);
+}
+
+export function PhoneStatus() {
+  return window['go']['main']['App']['PhoneStatus']();
+}
+
 export function PickFile(arg1) {
   return window['go']['main']['App']['PickFile'](arg1);
 }
@@ -300,6 +312,10 @@ export function RemoveWindowsTasks() {
 
 export function Report(arg1) {
   return window['go']['main']['App']['Report'](arg1);
+}
+
+export function ResetPhoneToken() {
+  return window['go']['main']['App']['ResetPhoneToken']();
 }
 
 export function ResolveScan(arg1, arg2) {
@@ -360,6 +376,14 @@ export function SetDataGoKey(arg1) {
 
 export function SetPackSize(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SetPackSize'](arg1, arg2, arg3, arg4);
+}
+
+export function SetPhoneEnabled(arg1) {
+  return window['go']['main']['App']['SetPhoneEnabled'](arg1);
+}
+
+export function SetPhoneRelay(arg1) {
+  return window['go']['main']['App']['SetPhoneRelay'](arg1);
 }
 
 export function SetScanQty(arg1, arg2) {

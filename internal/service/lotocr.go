@@ -6,6 +6,8 @@ package service
 //    모아레(화면 격자 무늬)를 흐리게 지운 두 가지 버전을 만든다. 모두 흑백·대비 보정.
 // 2. Windows OCR(한국어)로 단어와 위치를 읽는다.
 // 3. 표 머리(사입일자·거래처·수량·유효기간·제조번호…)를 찾아 열 위치를 정하고, 단어를 줄·열로 나눈다.
+//    머리가 없거나 반쯤 잘렸으면 칸의 모양(날짜·수량·금액·제조번호)으로 열을 정한다 (lotocr_shape.go).
+//    날짜가 있는 사입 줄은 유효기간·제조번호를 못 읽어도 버리지 않는다 — 빈 칸으로 보여 주고 사용자가 채운다.
 //    한국어 OCR 은 숫자를 비슷한 한글로 읽는 일이 잦아(0→口, 8→日, 9→님) 숫자 칸에서는 되돌린다.
 // 4. 이미 가져온 사입현황(DB)에 같은 날짜의 사입이 있으면 날짜·도매·수량은 DB 값을 쓴다 (정확).
 // 5. 결과는 저장하지 않고 화면에 보여 준다. 사용자가 사진과 비교해 고친 뒤 저장한다.
@@ -127,6 +129,18 @@ func (s *Service) ReadLotPhoto(ctx context.Context, req LotPhotoRequest) (*LotPh
 	if len(res.Rows) == 0 && res.Note == "" {
 		res.Note = "사입 줄을 찾지 못했습니다. 사입일자·거래처·유효기간·제조번호 열이 보이게 다시 올려 주세요."
 	}
+	if len(res.Rows) > 0 && !strings.Contains(res.Note, "유효기간·제조번호를 읽지 못했습니다") {
+		none := true
+		for _, r := range res.Rows {
+			if r.Lot != "" || r.Expiry != "" {
+				none = false
+				break
+			}
+		}
+		if none {
+			res.Note = "사입 줄은 찾았지만 유효기간·제조번호 열이 보이지 않습니다. 그 열이 보이게 다시 올리거나, 빈 칸을 직접 채워 주세요."
+		}
+	}
 	for _, r := range results {
 		if r.Warn == "no_korean" {
 			note := "이 PC 에 한국어 글자 인식이 없어 도매 이름은 읽지 못했습니다 — 도매를 직접 고르세요 (설정 → 시간 및 언어 → 언어에서 '한국어'를 추가하면 읽습니다)."
@@ -165,7 +179,13 @@ func ocrVariants(src image.Image) ([]ocrVariant, string) {
 		if float64(maxd)*k > ocrMaxDim {
 			k = ocrMaxDim / float64(maxd)
 		}
-		return []ocrVariant{{img: stretchContrast(resizeGray(g, k), 0.01, 0.99), scale: k}}, "screenshot"
+		plain := ocrVariant{img: stretchContrast(resizeGray(g, k), 0.01, 0.99), scale: k}
+		if looksLikePhoto(g) {
+			// 메신저로 줄여 보낸 휴대폰 사진: 크기는 작아도 화면 무늬·잡음이 있다 → 흐리게 한 버전도 함께 읽는다
+			soft := ocrVariant{img: stretchContrast(resizeGray(boxBlur(g, 1), k), 0.02, 0.98), scale: k}
+			return []ocrVariant{plain, soft}, "photo"
+		}
+		return []ocrVariant{plain}, "screenshot"
 	}
 	// 휴대폰 사진: (1) 흐리게 + 반으로 줄임  (2) 원래 크기에서 약하게 흐리게
 	k := 0.5
@@ -181,6 +201,25 @@ func ocrVariants(src image.Image) ([]ocrVariant, string) {
 	}
 	b = stretchContrast(boxBlur(b, 2), 0.02, 0.98)
 	return []ocrVariant{{img: a, scale: k}, {img: b, scale: sb}}, "photo"
+}
+
+// looksLikePhoto : 화면 캡처는 바탕이 고르고(이웃 픽셀이 똑같다), 카메라 사진은 잡음 때문에 거의 모든 픽셀이 조금씩 다르다
+func looksLikePhoto(g *image.Gray) bool {
+	w, h := g.Rect.Dx(), g.Rect.Dy()
+	if w < 64 || h < 16 {
+		return false
+	}
+	same, n := 0, 0
+	for y := 0; y < h; y += 2 {
+		row := g.Pix[y*g.Stride : y*g.Stride+w]
+		for x := 0; x+1 < w; x += 2 {
+			if row[x] == row[x+1] {
+				same++
+			}
+			n++
+		}
+	}
+	return n > 0 && float64(same)/float64(n) < 0.3
 }
 
 func toGray(src image.Image) *image.Gray {
@@ -350,11 +389,13 @@ type parsedRow struct {
 }
 
 type parsedTable struct {
-	rows    []parsedRow
-	header  bool
-	raw     string
-	skipped int
-	rowH    float64
+	rows     []parsedRow
+	header   bool
+	raw      string
+	skipped  int
+	skipY    []float64 // 반품·조정으로 뺀 줄의 세로 위치 (다른 버전이 같은 줄을 사입으로 되살리지 않게)
+	rowH     float64
+	fallback bool // 표다운 줄이 없어 날짜만 있는 줄을 그대로 내놓음
 }
 
 // 머리 이름 (열 위치를 정한다). skip 은 읽지 않는 열이지만 숫자가 옆 열로 섞이지 않게 위치는 잡아 둔다.
@@ -373,8 +414,10 @@ var lotHeaderNames = []struct {
 }
 
 type ocrCol struct {
-	key string
-	x   float64
+	key      string
+	x        float64
+	x0, x1   float64 // 그 열 값들의 가로 범위 (모르면 0)
+	inferred bool    // 머리가 아니라 내용의 모양으로 정한 열
 }
 
 func parseLotTable(r platform.OCRResult, scale float64, sup func(string) (int64, string)) parsedTable {
@@ -413,38 +456,98 @@ func parseLotTable(r platform.OCRResult, scale float64, sup func(string) (int64,
 	if medH <= 0 {
 		medH = 10
 	}
-	out.rowH = medH * 1.6
 
 	cols, headerY := findLotHeader(boxes, medH)
-	out.header = len(cols) > 0
+	out = parseLotBody(boxes, cols, headerY, medH, sup)
+	if out.header {
+		// 머리로 본 줄이 엉뚱한 글자였을 수 있다 (표 아래의 다른 글자, 화면 안내문 등).
+		// 머리 기준으로는 한 줄도 못 읽었거나 머리 위쪽에 줄이 더 많으면, 머리 없이 내용 모양으로 읽은 쪽을 쓴다.
+		alt := parseLotBody(boxes, nil, 0, medH, sup)
+		above := 0
+		for _, r := range alt.rows {
+			if r.y < headerY && (r.Lot != "" || r.Expiry != "") {
+				above++
+			}
+		}
+		empty := len(out.rows) == 0 || out.fallback // 머리 기준으로는 표다운 줄이 하나도 없음
+		if n, a := usableRows(out), usableRows(alt); (n == 0 && a > 0) || above > n || (empty && len(alt.rows) > 0 && !alt.fallback) || (len(out.rows) == 0 && len(alt.rows) > 0) {
+			out = alt
+		}
+	}
+	out.raw = raw.String()
+	return out
+}
+
+// usableRows : 유효기간이나 제조번호를 읽은 줄 수
+func usableRows(t parsedTable) int {
+	if t.fallback {
+		return 0
+	}
+	n := 0
+	for _, r := range t.rows {
+		if r.Lot != "" || r.Expiry != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// parseLotBody : 머리 열(없으면 nil) 기준으로 본문 줄을 읽는다
+func parseLotBody(boxes []ocrBox, hdr []ocrCol, headerY, medH float64, sup func(string) (int64, string)) parsedTable {
+	out := parsedTable{header: len(hdr) > 0, rowH: medH * 1.6}
 	var body []ocrBox
 	for _, b := range boxes {
 		if !out.header || b.cy() > headerY+medH*0.6 {
 			body = append(body, b)
 		}
 	}
-	lastY := headerY
-	for _, line := range groupRows(body, medH) {
-		// 표가 끝난 뒤(빈 공간이 크게 벌어진 뒤)의 글자는 다른 표·화면 요소다
-		if out.header && len(line) >= 3 {
-			if line[0].cy()-lastY > medH*5 {
+	lines := groupRows(body, medH)
+	toks := make([][]lotTok, len(lines))
+	for i, line := range lines {
+		toks[i] = rowTokens(line, medH)
+	}
+	if out.header {
+		// 표가 끝난 뒤(빈 공간이 크게 벌어진 뒤)의 글자는 다른 표·화면 요소다.
+		// 다만 날짜가 있는 줄이면 표가 이어지는 것으로 본다 (종이가 접힌 자리, 사진의 빈 줄).
+		lastY := headerY
+		for i, line := range lines {
+			if len(line) < 3 {
+				continue
+			}
+			if line[0].cy()-lastY > medH*5 && !hasDateTok(toks[i]) {
+				lines, toks = lines[:i], toks[:i]
 				break
 			}
 			lastY = line[0].cy()
 		}
-		row, skip := buildLotRow(line, cols, medH, sup)
-		if skip {
+	}
+	var data [][]lotTok
+	for _, t := range toks {
+		if hasDateTok(t) {
+			data = append(data, t)
+		}
+	}
+	m := buildColModel(hdr, data, medH, sup)
+	var weak []parsedRow
+	for i, line := range lines {
+		row, st := buildLotRow(line, toks[i], m, medH, sup)
+		switch st {
+		case rowSkip:
 			out.skipped++
-			continue
+			out.skipY = append(out.skipY, line[0].cy())
+		case rowKeep:
+			out.rows = append(out.rows, *row)
+		case rowWeak:
+			weak = append(weak, *row)
 		}
-		if row == nil {
-			continue
+	}
+	// 반드시 지키는 약속: 날짜가 있는 (반품·조정이 아닌) 줄이 하나라도 있으면 '0줄'로 끝내지 않는다.
+	// 표다운 줄이 하나도 없으면 날짜만 읽힌 줄이라도 내놓는다 (모든 칸 '확인 필요').
+	if len(out.rows) == 0 && len(weak) > 0 {
+		out.rows, out.fallback = weak, true
+		for i := range out.rows {
+			out.rows[i].Unsure, out.rows[i].score = []string{"date", "supplier", "qty", "expiry", "lot"}, 0
 		}
-		// 확실한 칸이 하나도 없고 제조번호도 짧으면 표의 줄이 아니라 잡음으로 본다
-		if row.score == 0 && len(row.Lot) < 5 {
-			continue
-		}
-		out.rows = append(out.rows, *row)
 	}
 	return out
 }
@@ -517,7 +620,7 @@ func findLotHeader(boxes []ocrBox, medH float64) ([]ocrCol, float64) {
 			bestN, bestY = n, c.y
 			bestCols = bestCols[:0]
 			for _, d := range seen {
-				bestCols = append(bestCols, ocrCol{d.key, d.x})
+				bestCols = append(bestCols, ocrCol{key: d.key, x: d.x})
 			}
 		}
 	}
@@ -525,30 +628,34 @@ func findLotHeader(boxes []ocrBox, medH float64) ([]ocrCol, float64) {
 	return bestCols, bestY
 }
 
-// groupRows : 세로 위치가 비슷한 단어끼리 한 줄로 묶는다
+// groupRows : 세로 위치가 비슷한 단어끼리 한 줄로 묶는다.
+// 왼쪽에서 오른쪽으로 가며 그 줄의 마지막 단어들과 비교한다 — 사진이 조금 기울거나 휘어 줄의 왼쪽과 오른쪽 높이가
+// 달라도(줄 전체 평균과 비교하면 한 줄이 둘로 쪼개져 날짜와 제조번호가 갈라진다) 한 줄로 따라간다.
 func groupRows(boxes []ocrBox, medH float64) [][]ocrBox {
-	sort.Slice(boxes, func(i, j int) bool { return boxes[i].cy() < boxes[j].cy() })
+	sorted := append([]ocrBox(nil), boxes...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].x0 < sorted[j].x0 })
 	var rows [][]ocrBox
-	var cur []ocrBox
-	var cy float64
-	for _, b := range boxes {
-		if len(cur) > 0 && math.Abs(b.cy()-cy) > medH*0.55 {
-			rows = append(rows, cur)
-			cur = nil
+	tail := func(r []ocrBox) float64 {
+		n := len(r)
+		if n >= 2 {
+			return (r[n-1].cy() + r[n-2].cy()) / 2
 		}
-		cur = append(cur, b)
-		s := 0.0
-		for _, c := range cur {
-			s += c.cy()
+		return r[n-1].cy()
+	}
+	for _, b := range sorted {
+		best, bd := -1, medH*0.55
+		for i, r := range rows {
+			if d := math.Abs(b.cy() - tail(r)); d <= bd {
+				best, bd = i, d
+			}
 		}
-		cy = s / float64(len(cur))
+		if best < 0 {
+			rows = append(rows, []ocrBox{b})
+		} else {
+			rows[best] = append(rows[best], b)
+		}
 	}
-	if len(cur) > 0 {
-		rows = append(rows, cur)
-	}
-	for _, r := range rows {
-		sort.Slice(r, func(i, j int) bool { return r[i].x0 < r[j].x0 })
-	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i][0].cy() < rows[j][0].cy() })
 	return rows
 }
 
@@ -556,15 +663,47 @@ var notPurchase = []string{"반품", "조정", "재고정리", "고정리", "폐
 
 var qtyLike = regexp.MustCompile(`^-?\d{1,5}\.\d{2}$`)
 
-// buildLotRow : 한 줄의 단어를 열에 나눠 값을 만든다. skip=true 는 반품·재고조정처럼 사입이 아닌 줄.
-func buildLotRow(line []ocrBox, cols []ocrCol, medH float64, sup func(string) (int64, string)) (*parsedRow, bool) {
+type rowState int
+
+const (
+	rowNone rowState = iota // 표의 줄이 아님 (잡음)
+	rowKeep                 // 사입 줄
+	rowWeak                 // 날짜만 읽힌 줄 — 다른 줄이 하나도 없을 때만 내놓는다
+	rowSkip                 // 반품·재고조정·취소 등 사입이 아닌 줄
+)
+
+func countDigits(s string) int {
+	n := 0
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			n++
+		}
+	}
+	return n
+}
+
+// buildLotRow : 한 줄의 단어를 열에 나눠 값을 만든다.
+//
+// 줄을 남기는 기준은 여기 한 곳에만 둔다:
+//   - 반품·조정 낱말이 있거나 음수 수량·금액이면 사입이 아님 (rowSkip)
+//   - 유효기간이나 제조번호를 읽었으면 남긴다 (날짜도 확실한 칸도 없고 제조번호가 짧으면 잡음)
+//   - 둘 다 못 읽었어도 날짜가 있고 표의 줄답게 수량·도매·금액이 있으면 남긴다 (빈 칸은 사용자가 채움)
+//   - 날짜만 있으면 rowWeak
+func buildLotRow(line []ocrBox, toks []lotTok, m *colModel, medH float64, sup func(string) (int64, string)) (*parsedRow, rowState) {
+	cols := m.cols
 	cells := map[string][]string{}
 	var all []string
 	var minX, maxX float64 = math.Inf(-1), math.Inf(1)
-	if len(cols) >= 2 {
-		// 표 바깥(왼쪽 메뉴·오른쪽 여백)의 글자는 뺀다
+	if m.header && len(cols) >= 2 {
+		// 표 바깥(왼쪽 메뉴·오른쪽 여백)의 글자는 뺀다. 머리가 없으면 자르지 않는다 (모든 열을 내용으로 정했으므로).
 		minX = cols[0].x - (cols[1].x-cols[0].x)*0.8
 		maxX = cols[len(cols)-1].x + (cols[len(cols)-1].x-cols[len(cols)-2].x)*0.8
+		if c := cols[0]; c.x1 > 0 {
+			minX = math.Min(minX, c.x0-medH)
+		}
+		if c := cols[len(cols)-1]; c.x1 > 0 {
+			maxX = math.Max(maxX, c.x1+medH)
+		}
 	}
 	for _, b := range line {
 		if b.cx() < minX || b.cx() > maxX {
@@ -574,15 +713,10 @@ func buildLotRow(line []ocrBox, cols []ocrCol, medH float64, sup func(string) (i
 		if len(cols) == 0 {
 			continue
 		}
-		// 가장 가까운 열 (열 사이 경계 = 두 머리의 가운데).
-		// '구분' 열은 좁고 다음의 거래처는 왼쪽 정렬이라, 구분 머리 바로 오른쪽부터는 거래처로 본다.
+		// 가장 가까운 열 (열 사이 경계 = 두 머리의 가운데, 내용으로 잡은 열은 두 열 사이 빈 곳의 가운데)
 		k := cols[len(cols)-1].key
 		for i := 0; i < len(cols)-1; i++ {
-			edge := (cols[i].x + cols[i+1].x) / 2
-			if cols[i].key == "kind" {
-				edge = math.Min(edge, cols[i].x+medH*1.3)
-			}
-			if b.cx() < edge {
+			if b.cx() < m.colEdge(i, medH) {
 				k = cols[i].key
 				break
 			}
@@ -590,74 +724,162 @@ func buildLotRow(line []ocrBox, cols []ocrCol, medH float64, sup func(string) (i
 		cells[k] = append(cells[k], b.t)
 	}
 	if len(all) == 0 {
-		return nil, false
+		return nil, rowNone
 	}
-	text := strings.Join(all, " ")
 	joined := func(k string) string { return strings.Join(cells[k], "") }
 
-	kindText := joined("kind") + " " + joined("supplier")
-	if len(cols) == 0 {
-		kindText = text
-	}
-	for _, w := range notPurchase {
-		if strings.Contains(strings.ReplaceAll(kindText, " ", ""), w) {
-			return nil, true
+	// 이 줄의 칸 (표 안쪽만)
+	var in []lotTok
+	hasDate, purchaseWord, kindHit := false, false, false
+	negs, nums := 0, 0
+	for _, t := range toks {
+		if t.cx() < minX || t.cx() > maxX {
+			continue
 		}
+		in = append(in, t)
+		switch t.kind {
+		case tkDate, tkDate8:
+			hasDate = true
+		case tkDec, tkAmt:
+			nums++
+			if t.neg {
+				negs++
+			}
+		case tkKind:
+			if _, p := isKindWord(strings.Join(strings.Fields(t.t), "")); p {
+				purchaseWord = true
+			} else {
+				kindHit = true
+			}
+		}
+	}
+	if hasNotPurchaseWord(strings.ReplaceAll(joined("kind")+joined("supplier"), " ", "")) {
+		kindHit = true
+	}
+	// 반품·조정: 낱말로, 또는 (낱말을 잘못 읽었거나 한국어 인식이 없을 때) 음수 수량·금액으로
+	if kindHit {
+		if m.header || hasDate || negs > 0 {
+			return nil, rowSkip
+		}
+		return nil, rowNone // 표 밖의 안내문 등
+	}
+	if negs >= 2 || (negs == 1 && nums == 1 && hasDate) {
+		return nil, rowSkip
 	}
 
 	row := &parsedRow{y: line[0].cy()}
 	unsure := map[string]bool{}
-	if len(cols) > 0 {
-		row.Date, unsure["date"] = parseOCRDate(joined("date"), true)
-		row.Expiry, unsure["expiry"] = parseOCRDate(joined("expiry"), false)
-		row.Lot, unsure["lot"] = cleanLot(joined("lot"))
-		row.SupplierRaw = strings.TrimSpace(strings.Join(cells["supplier"], " "))
-		row.DateRaw = fixDigits(joined("date"))
-		q, okq := parseOCRNumber(joined("total"))
-		if !okq {
-			q, okq = parseOCRNumber(joined("qty"))
-		}
-		if !okq && len(cells["total"]) == 0 && len(cells["qty"]) == 0 {
-			// 수량 머리를 못 읽음: 이팜은 수량을 소수 둘째 자리(4.00, 120.00)로, 금액은 쉼표로 쓴다 → 소수가 둘이면 뒤가 총수량
-			var decs []float64
-			for _, t := range cells["skip"] {
-				if qtyLike.MatchString(fixDigits(t)) {
-					if v, ok := parseOCRNumber(t); ok {
-						decs = append(decs, v)
-					}
-				}
-			}
-			if len(decs) > 0 {
-				q, okq = decs[min(1, len(decs)-1)], true
-			}
-		}
-		if okq {
-			row.Qty = q
-		}
-		unsure["qty"] = !okq
+	row.Date, unsure["date"] = parseOCRDate(joined("date"), true)
+	row.Expiry, unsure["expiry"] = parseOCRDate(joined("expiry"), false)
+	if row.Expiry != "" && row.Expiry < time.Now().Format("2006-01-02") {
+		unsure["expiry"] = true // 이미 지난 유효기간: 숫자를 잘못 읽었을 가능성이 크다
+	}
+	if lotCell := joined("lot"); classifyTok(lotCell).kind != tkDate { // 제조번호 자리에 걸친 다른 날짜(화면 시계 등)는 제조번호가 아니다
+		row.Lot, unsure["lot"] = cleanLot(lotCell)
 	} else {
-		// 머리를 못 찾음: 줄 전체에서 모양으로 찾는다 (날짜 2개 → 앞 = 사입일자, 뒤 = 유효기간)
-		dates := findDates(text)
-		if len(dates) > 0 {
-			row.Date = dates[0]
-		}
-		if len(dates) > 1 {
-			row.Expiry = dates[len(dates)-1]
-		}
-		unsure["date"], unsure["expiry"], unsure["qty"] = true, true, true
-		row.Lot, _ = cleanLot(lastLotToken(line))
 		unsure["lot"] = true
 	}
+	// 유효기간과 제조번호가 한 단어로 붙어 읽힘 (202905310031201): 앞 8자리 = 유효기간, 나머지 = 제조번호 (둘 다 '확인 필요')
+	if row.Lot == "" {
+		if e, l, ok := splitExpiryLot(joined("expiry")); ok {
+			row.Expiry, row.Lot, unsure["expiry"], unsure["lot"] = e, l, true, true
+		}
+	} else if row.Expiry == "" {
+		if e, l, ok := splitExpiryLot(joined("lot")); ok {
+			row.Expiry, row.Lot, unsure["expiry"], unsure["lot"] = e, l, true, true
+		}
+	}
+	if m.lotDigits && row.Lot != "" {
+		// 숫자뿐인 제조번호 열에 영문이 섞임: 0·1 을 O·I 로 읽은 것이면 되돌리고, 어느 쪽이든 '확인 필요'
+		fixed, pure := digitsOnlyLot(row.Lot)
+		if fixed != row.Lot || !pure {
+			row.Lot, unsure["lot"] = fixed, true
+		}
+	}
+	var supWords []string
+	for _, w := range cells["supplier"] {
+		if k, _ := isKindWord(strings.TrimSpace(w)); k && !m.has["kind"] {
+			continue // 구분 열이 따로 없으면 '사입'이 도매 이름 앞에 붙어 온다
+		}
+		supWords = append(supWords, w)
+	}
+	row.SupplierRaw = strings.TrimSpace(strings.Join(supWords, " "))
+	row.DateRaw = fixDigits(joined("date"))
+	q, okq, qtyOdd := parseOCRQty(joined("total"), m.decimals)
+	if !okq {
+		q, okq, qtyOdd = parseOCRQty(joined("qty"), m.decimals)
+		if okq && m.has["total"] {
+			qtyOdd = true // 총수량 열이 있는데 이 줄에서는 못 읽어 수량(묶음 수)을 대신 넣음
+		}
+	}
+	if !okq && len(cells["total"]) == 0 && len(cells["qty"]) == 0 {
+		// 수량 열을 못 정함: 이팜은 수량을 소수 둘째 자리(4.00, 120.00)로, 금액은 쉼표로 쓴다 → 소수가 둘이면 뒤가 총수량
+		var decs []float64
+		for _, t := range cells["skip"] {
+			if qtyLike.MatchString(fixDigits(t)) {
+				if v, ok := parseOCRNumber(t); ok {
+					decs = append(decs, v)
+				}
+			}
+		}
+		if len(decs) > 0 {
+			q, okq = decs[min(1, len(decs)-1)], true
+			qtyOdd = len(decs) == 1 // 하나뿐이면 수량인지 총수량인지 모른다
+		}
+	}
+	if okq {
+		row.Qty = q
+	}
+	unsure["qty"] = !okq || qtyOdd
 	if row.Qty < 0 {
-		return nil, true // 취소(음수) 줄
+		return nil, rowSkip // 취소(음수) 줄
 	}
-	if row.Lot == "" && row.Expiry == "" {
-		return nil, false
+
+	// 열로 못 찾은 칸은 이 줄 안에서 모양으로 찾는다 (모두 '확인 필요')
+	di := -1
+	for i, t := range in {
+		if t.kind == tkDate || (t.kind == tkDate8 && di < 0 && !hasDashDate(in)) {
+			di = i
+			break
+		}
 	}
+	if row.Date == "" && di >= 0 && in[di].kind == tkDate {
+		row.Date, unsure["date"] = in[di].date, true
+		if row.DateRaw == "" {
+			row.DateRaw = strings.ReplaceAll(row.Date, "-", "")
+		}
+	}
+	if row.Expiry == "" && row.Lot == "" {
+		// 사입일자 오른쪽의 마지막 날짜 = 유효기간, 그 오른쪽의 코드 = 제조번호. 유효기간이 없으면 제조번호도 짐작하지 않는다
+		// (칸이 빈 사입 줄에서 '마지막 칸'을 제조번호로 삼으면 금액이나 과세 구분이 들어간다).
+		ei := -1
+		for j := len(in) - 1; j > di; j-- {
+			if in[j].kind == tkDate8 || in[j].kind == tkDate {
+				ei = j
+				break
+			}
+		}
+		if ei >= 0 && (di >= 0 || in[ei].date > time.Now().Format("2006-01-02")) {
+			row.Expiry, unsure["expiry"] = in[ei].date, true
+			for j := ei + 1; j < len(in); j++ {
+				if in[j].kind == tkCode {
+					row.Lot, _ = cleanLot(in[j].t)
+					unsure["lot"] = true
+					break
+				}
+			}
+		}
+	}
+
 	if row.SupplierRaw != "" {
 		row.SupplierID, row.SupplierName = sup(row.SupplierRaw)
 	}
 	unsure["supplier"] = row.SupplierID == 0
+	for k, w := range m.weak {
+		if w {
+			unsure[k] = true
+		}
+	}
 	for _, k := range []string{"date", "supplier", "qty", "expiry", "lot"} {
 		if unsure[k] {
 			row.Unsure = append(row.Unsure, k)
@@ -665,7 +887,44 @@ func buildLotRow(line []ocrBox, cols []ocrCol, medH float64, sup func(string) (i
 			row.score++
 		}
 	}
-	return row, false
+	dated := hasDate || row.Date != "" || countDigits(row.DateRaw) >= 4
+	if row.Lot == "" && row.Expiry == "" {
+		if !dated {
+			return nil, rowNone
+		}
+		if okq || row.SupplierID != 0 || purchaseWord || nums >= 2 {
+			return row, rowKeep
+		}
+		return row, rowWeak
+	}
+	// 날짜도 확실한 칸도 없고 제조번호도 짧으면 표의 줄이 아니라 잡음으로 본다
+	if !dated && row.score == 0 && len(row.Lot) < 5 {
+		return nil, rowNone
+	}
+	return row, rowKeep
+}
+
+// splitExpiryLot : 8자리 날짜 뒤에 제조번호가 붙은 칸을 나눈다
+func splitExpiryLot(cell string) (expiry, lot string, ok bool) {
+	raw := strings.Join(strings.Fields(cell), "")
+	if len(raw) < 8+3 || !shapeDate8.MatchString(raw[:8]) {
+		return "", "", false
+	}
+	expiry, ok = validDate(raw[:4], raw[4:6], raw[6:8])
+	if !ok {
+		return "", "", false
+	}
+	lot, _ = cleanLot(raw[8:])
+	return expiry, lot, lot != ""
+}
+
+func hasDashDate(toks []lotTok) bool {
+	for _, t := range toks {
+		if t.kind == tkDate {
+			return true
+		}
+	}
+	return false
 }
 
 // 한국어 OCR 이 숫자를 비슷하게 생긴 글자로 읽는 경우 (화면 캡처·사진 실측)
@@ -713,6 +972,9 @@ func parseOCRDate(s string, past bool) (string, bool) {
 	if len(digits) < 8 {
 		return "", true
 	}
+	if len(digits) > 8 {
+		changed = true // 옆 칸 숫자가 붙었을 수 있다
+	}
 	digits = digits[:8]
 	d, err := time.Parse("20060102", digits)
 	if err != nil || d.Year() < 2000 || d.Year() > 2099 {
@@ -722,18 +984,6 @@ func parseOCRDate(s string, past bool) (string, bool) {
 		return domain.FormatDate(d), true
 	}
 	return domain.FormatDate(d), changed
-}
-
-var dateLike = regexp.MustCompile(`(20\d{2})[-./]?(\d{2})[-./]?(\d{2})`)
-
-func findDates(s string) []string {
-	var out []string
-	for _, m := range dateLike.FindAllStringSubmatch(fixDigits(strings.ReplaceAll(s, " ", "")), -1) {
-		if d, err := time.Parse("20060102", m[1]+m[2]+m[3]); err == nil {
-			out = append(out, domain.FormatDate(d))
-		}
-	}
-	return out
 }
 
 // parseOCRNumber : "120.00" "1,559,040" "-18.00" → 수
@@ -747,6 +997,26 @@ func parseOCRNumber(s string) (float64, bool) {
 		return 0, false
 	}
 	return v, true
+}
+
+var commaDecimal = regexp.MustCompile(`^-?\d{1,5},\d{2}$`)
+
+// parseOCRQty : 수량 칸. decimals = 이 표의 수량이 소수 둘째 자리(2.00)로 적혀 있음 (이팜).
+// 작은 글자에서는 소수점을 쉼표로 읽거나(120,00) 놓친다(200) — 그대로 두면 100배가 된다. 되돌리고 odd=true (확인 필요).
+func parseOCRQty(s string, decimals bool) (v float64, ok, odd bool) {
+	f := fixDigits(s)
+	if commaDecimal.MatchString(f) {
+		v, ok = parseOCRNumber(strings.Replace(f, ",", ".", 1))
+		return v, ok, true
+	}
+	v, ok = parseOCRNumber(f)
+	if ok && decimals && !strings.Contains(f, ".") {
+		odd = true
+		if d := strings.TrimPrefix(strings.ReplaceAll(f, ",", ""), "-"); len(d) >= 3 && strings.HasSuffix(d, "00") {
+			v /= 100
+		}
+	}
+	return v, ok, odd
 }
 
 // cleanLot : 제조번호는 영문·숫자·하이픈. 한글로 잘못 읽힌 숫자는 되돌리고 나머지 이상한 글자는 뺀다.
@@ -773,25 +1043,6 @@ func cleanLot(s string) (string, bool) {
 		return "", true
 	}
 	return lot, odd || len(lot) < 4
-}
-
-func lastLotToken(line []ocrBox) string {
-	for i := len(line) - 1; i >= 0; i-- {
-		t := line[i].t
-		hasL, hasD := false, false
-		for _, r := range t {
-			if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' {
-				hasL = true
-			}
-			if r >= '0' && r <= '9' {
-				hasD = true
-			}
-		}
-		if hasL && hasD {
-			return t
-		}
-	}
-	return ""
 }
 
 // ocrNameKey : 비교용 — 괄호·기호·공백을 빼고 (주) 표시를 없앤다
@@ -879,10 +1130,35 @@ func mergeTables(ts []parsedTable) *LotPhotoResult {
 	base := ts[best]
 	res.RawText = base.raw
 	res.Skipped = base.skipped
-	if !base.header && len(base.rows) > 0 {
-		res.Note = "표 머리(사입일자·거래처·유효기간·제조번호)를 찾지 못해 줄 모양으로만 읽었습니다. 모든 칸을 사진과 꼭 비교하세요."
+	switch {
+	case base.fallback:
+		res.Note = "날짜가 있는 줄은 찾았지만 유효기간·제조번호를 읽지 못했습니다. 사진과 비교해 빈 칸을 직접 채우거나, 유효기간·제조번호 열이 보이게 다시 올려 주세요."
+	case !base.header && len(base.rows) > 0:
+		res.Note = "표 머리(사입일자·거래처·유효기간·제조번호)가 없어 칸의 모양(날짜·수량·제조번호)으로 열을 정했습니다. 사진과 꼭 비교하세요."
 	}
+	// 어느 버전이든 반품·조정으로 본 줄은 사입으로 되살리지 않는다 (한 버전이 '반품'을 잘못 읽어도 다른 버전이 잡는다)
+	isSkipped := func(y float64, except int) bool {
+		for j, t := range ts {
+			if j == except {
+				continue
+			}
+			for _, sy := range t.skipY {
+				if math.Abs(sy-y) <= base.rowH*0.6 {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	baseRows := base.rows[:0:0]
 	for _, r := range base.rows {
+		if isSkipped(r.y, best) {
+			res.Skipped++
+			continue
+		}
+		baseRows = append(baseRows, r)
+	}
+	for _, r := range baseRows {
 		row := r.LotPhotoRow
 		for j, t := range ts {
 			if j == best {
@@ -902,7 +1178,7 @@ func mergeTables(ts []parsedTable) *LotPhotoResult {
 		row LotPhotoRow
 	}
 	all := make([]yrow, 0, len(res.Rows))
-	for i, r := range base.rows {
+	for i, r := range baseRows {
 		all = append(all, yrow{r.y, res.Rows[i]})
 	}
 	for j, t := range ts {
@@ -910,7 +1186,8 @@ func mergeTables(ts []parsedTable) *LotPhotoResult {
 			continue
 		}
 		for _, o := range t.rows {
-			dup := false
+			// 다른 버전이 뺀 줄, 날짜만 읽힌 줄(fallback)은 바탕에 줄이 있으면 가져오지 않는다
+			dup := isSkipped(o.y, j) || (t.fallback && len(baseRows) > 0)
 			for _, a := range all {
 				if math.Abs(a.y-o.y) <= base.rowH*0.6 {
 					dup = true
@@ -1108,6 +1385,22 @@ func pairScore(r LotPhotoRow, p purchaseRef) float64 {
 	return sc
 }
 
+// dateConflict : 사입일자를 또렷이 읽었는데 사입현황 날짜와 두 자리 이상 다르면 다른 사입이다.
+// (한 자리 차이는 OCR 이 숫자 하나를 잘못 읽은 것일 수 있어 순서 짝짓기에 맡긴다.)
+// 이 확인이 없으면 사입현황에 아직 없는 새 사입 줄이 (도매·수량이 같거나 순서만으로) 옛 사입과 짝지어져 날짜가 바뀐다.
+func dateConflict(r LotPhotoRow, p purchaseRef) bool {
+	if r.Date == "" || isUnsure(r, "date") || len(r.Date) != len(p.date) {
+		return false
+	}
+	diff := 0
+	for i := 0; i < len(r.Date); i++ {
+		if r.Date[i] != p.date[i] {
+			diff++
+		}
+	}
+	return diff >= 2
+}
+
 // alignWithPurchases : 같은 약품의 사입현황(DB)과 줄을 맞춰 날짜·도매·수량은 DB 값을 쓴다.
 // 화면과 DB 모두 날짜 내림차순이므로 순서를 지키는 짝짓기(동적 계획법)로 가장 잘 맞는 짝을 고른다.
 // 그래서 날짜를 제대로 못 읽어도 도매 순서와 읽은 숫자 일부로 어느 사입인지 찾는다.
@@ -1144,7 +1437,7 @@ func (s *Service) alignWithPurchases(code string, rows []LotPhotoRow) {
 	for i := 1; i <= n; i++ {
 		for j := 1; j <= m; j++ {
 			best := math.Max(dp[i-1][j], dp[i][j-1])
-			if sc := pairScore(rows[i-1], refs[j-1]); sc >= minPair {
+			if sc := pairScore(rows[i-1], refs[j-1]); sc >= minPair && !dateConflict(rows[i-1], refs[j-1]) {
 				best = math.Max(best, dp[i-1][j-1]+sc)
 			}
 			dp[i][j] = best
@@ -1176,7 +1469,7 @@ func (s *Service) alignWithPurchases(code string, rows []LotPhotoRow) {
 	for i, j := n, m; i > 0 && j > 0; {
 		sc := pairScore(rows[i-1], refs[j-1])
 		switch {
-		case sc >= minPair && math.Abs(dp[i][j]-(dp[i-1][j-1]+sc)) < 1e-9:
+		case sc >= minPair && !dateConflict(rows[i-1], refs[j-1]) && math.Abs(dp[i][j]-(dp[i-1][j-1]+sc)) < 1e-9:
 			match[i-1] = j - 1
 			i, j = i-1, j-1
 		case dp[i][j] == dp[i-1][j]:
@@ -1206,6 +1499,9 @@ func (s *Service) alignWithPurchases(code string, rows []LotPhotoRow) {
 		if (lo >= 0 || hi < m) && hi-lo-1 > 0 {
 			gr, gp := rows[i:k], refs[lo+1:hi]
 			soft := func(a, b int) (float64, bool) {
+				if dateConflict(gr[a], gp[b]) {
+					return 0, false
+				}
 				sc := pairScore(gr[a], gp[b])
 				return sc + 1.5, sc >= -1
 			}

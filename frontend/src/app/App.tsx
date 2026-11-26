@@ -32,7 +32,7 @@ function Routes() {
       if (c === 'p' && d && e === 'scan') return <ScanPage date={b} code={d} />
       if (c === 'p' && d && e === 'register') return <RegisterPage date={b} code={d} />
       if (c === 'p' && d) return <ProductPage date={b} code={d} />
-      if (c === 'lots') return <LotPhotoPage date={b} />
+      if (c === 'lots') return <LotPhotoPage date={b} initialCode={d} />
       return <CutCasePage date={b} />
     case 'notices':
       return b ? <NoticeDetailPage id={Number(b)} /> : <NoticesPage />

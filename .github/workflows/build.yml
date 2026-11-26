@@ -80,9 +80,21 @@ jobs:
           Write-Output "한국어 글자 인식: $ok"
           "ko=$ok" >> $env:GITHUB_OUTPUT
 
-      - name: 글자 인식 테스트
+      # 휴대폰 외부 중계(relay.go)가 받는 cloudflared 의 전자서명 확인을 실제 파일로 시험한다 (받지 못하면 그 부분만 건너뜀)
+      - name: cloudflared 받기 (서명 확인 시험용, 실행하지 않음)
+        id: cfd
+        shell: pwsh
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          $p = Join-Path $env:RUNNER_TEMP 'cloudflared.exe'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile $p
+          "path=$p" >> $env:GITHUB_OUTPUT
+
+      - name: 글자 인식·서명 확인 테스트
         env:
           CGO_ENABLED: '0'
+          DPR_TEST_CLOUDFLARED: ${{ steps.cfd.outputs.path }}
           DPR_OCR_REQUIRE: '1'
           DPR_OCR_REQUIRE_KO: ${{ steps.ko.outputs.ko == 'True' && '1' || '0' }}
-        run: go test ./internal/platform/ ./internal/service/ -run "PowerShell|OCR|ReadLotPhotoRealOCR" -v -count=1 -timeout 600s
+        run: go test ./internal/platform/ ./internal/service/ -run "PowerShell|OCR|ReadLotPhotoRealOCR|VerifySigner" -v -count=1 -timeout 600s

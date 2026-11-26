@@ -1,16 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowUpToLine, Camera, Check, ChevronDown, ImageIcon, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ArrowUpToLine, Camera, Check, ChevronDown, ImageIcon, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { api, errorText, keys, obj, useAction, useRanking, useSuppliers, type service } from '../../app/api'
 import { dateDot, qty, todayISO } from '../../app/format'
 import { Link, navigate, paths } from '../../app/router'
 import { FileDrop, fileToBase64 } from '../../components/FileDrop'
+import { PhoneConnectButton } from '../../components/PhoneConnect'
 import { Badge, Button, Callout, Card, Dialog, Empty, ErrorBox, Input, Kbd, PageHeader, Select, Skeleton, Spinner, cx } from '../../components/ui'
 
-// 회차 4단계: 실계수를 넣은 약품의 사입 이력(유효기간·제조번호 포함)을 사진으로 올려
-// Windows 기본 OCR(무료·오프라인)로 읽고 → 사용자가 사진과 비교·수정 → 저장.
-// 저장한 근거는 5단계 바코드 → 도매 매칭에 쓰인다.
+// 회차 3단계: 실계수를 넣은 약품의 사입 이력(유효기간·제조번호 포함)을 사진으로 올려
+// Windows 기본 OCR(무료·오프라인)로 읽고 → 사용자가 사진과 비교·수정 → 저장 → 4단계 판정 확인으로 이어진다.
+// 손실 순위 표에서 약품 오른쪽 화살표(→)로 들어오면 그 약품이 골라진 채로 열린다 (#/cuts/{시행일}/lots/{약품코드}).
+// 저장한 근거는 5단계 바코드 → 도매 매칭에도 쓰인다.
 
 /** 판독 결과 한 줄 (화면에서 고치는 중) */
 type Draft = {
@@ -34,10 +36,26 @@ type Photo = {
   result?: service.LotPhotoResult
   rows: Draft[]
   checked: boolean
+  phoneId?: number // 휴대폰에서 온 사진 (phone.go) — 닫거나 저장하면 PC 의 받은 목록에서 뺀다
 }
 
 let seq = 1
 const nextKey = () => seq++
+/** 글자 인식이 안 될 때 직접 입력할 빈 줄 */
+const blankDraft = (): Draft => ({ key: nextKey(), date: '', supplierId: 0, supplierRaw: '', qty: '', expiry: '', lot: '', matched: '', unsure: [] })
+
+const toDrafts = (res?: service.LotPhotoResult | null): Draft[] =>
+  (res?.rows ?? []).map((r) => ({
+    key: nextKey(),
+    date: r.date,
+    supplierId: r.supplierId,
+    supplierRaw: r.supplierRaw,
+    qty: r.qty ? String(r.qty) : '',
+    expiry: r.expiry,
+    lot: r.lot,
+    matched: r.matched,
+    unsure: r.unsure ?? [],
+  }))
 
 export const useLotEvidence = (codes: string[]) =>
   useQuery({ queryKey: [...keys.all, 'lot-evidence', codes], queryFn: () => api.ListLotEvidence(codes), enabled: codes.length > 0 })
@@ -51,24 +69,70 @@ export function countedRows(data: service.Ranking | undefined) {
 
 const dateInput = (iso: string) => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : '')
 
-export function LotPhotoPage({ date }: { date: string }) {
+export function LotPhotoPage({ date, initialCode }: { date: string; initialCode?: string }) {
   const rk = useRanking(date, true)
   const sups = useSuppliers(false)
-  const counted = useMemo(() => countedRows(rk.data), [rk.data])
+  // 휴대폰에서 온 사입정보 사진 (아직 확인하지 않은 것)
+  const inbox = useQuery({ queryKey: [...keys.all, 'phone-inbox', date], queryFn: () => api.PhoneInbox(date) })
+  // 실계수를 넣은 약품 + 화살표로 들어온 약품·휴대폰 사진의 약품 (실계수 전이어도 보여 준다)
+  const counted = useMemo(() => {
+    const list = countedRows(rk.data)
+    const want = [initialCode, ...(inbox.data ?? []).map((i) => i.code)].filter((c): c is string => !!c)
+    const extra: service.RankRow[] = []
+    for (const c of want) {
+      if (list.some((r) => r.code === c) || extra.some((r) => r.code === c)) continue
+      const row = (rk.data?.rows ?? []).find((r) => r.code === c)
+      if (row) extra.push(row)
+    }
+    return [...extra, ...list]
+  }, [rk.data, initialCode, inbox.data])
   const codes = useMemo(() => counted.map((r) => r.code), [counted])
   const ev = useLotEvidence(codes)
   const [photos, setPhotos] = useState<Photo[]>([])
   const [zoom, setZoom] = useState<Photo | null>(null)
-  const [code, setCode] = useState('')
+  const [code, setCode] = useState(initialCode ?? '')
+  const [saved, setSaved] = useState('') // 방금 근거를 저장한 약품 → 4단계 안내
   const evidence = ev.data ?? []
   const evCount = (c: string) => evidence.filter((e) => e.code === c).length
 
-  // 처음에는 아직 근거가 없는 첫 약품을 고른다
+  // 화살표로 들어온 약품을 고른다. 주소 없이 들어오면 아직 근거가 없는 첫 약품
+  useEffect(() => {
+    if (initialCode) setCode(initialCode)
+  }, [initialCode])
   useEffect(() => {
     if (!code && counted.length > 0 && ev.isFetched) setCode((counted.find((r) => evCount(r.code) === 0) ?? counted[0]).code)
   }, [counted, ev.isFetched]) // eslint-disable-line react-hooks/exhaustive-deps
+  const pick = (c: string) => {
+    setSaved('')
+    navigate(paths.lotPhotos(date, c)) // 주소도 바꿔 뒤로 가기·새로 고침에도 같은 약품
+  }
 
   const patchPhoto = (id: number, p: Partial<Photo>) => setPhotos((ps) => ps.map((x) => (x.id === id ? { ...x, ...p } : x)))
+
+  // 휴대폰에서 새 사진이 오면 확인 카드로 올린다 (한 번만)
+  const seenPhone = useRef(new Set<number>())
+  useEffect(() => {
+    const fresh = (inbox.data ?? []).filter((it) => !seenPhone.current.has(it.id))
+    if (fresh.length === 0) return
+    for (const it of fresh) seenPhone.current.add(it.id)
+    setPhotos((ps) => [
+      ...fresh.map(
+        (it): Photo => ({
+          id: nextKey(),
+          phoneId: it.id,
+          name: `휴대폰 사진 · ${new Date(it.receivedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`,
+          url: `data:${it.mediaType || 'image/jpeg'};base64,${it.imageBase64}`,
+          code: it.code,
+          status: it.error ? 'error' : 'done',
+          error: it.error || undefined,
+          result: it.result ?? undefined,
+          rows: it.error && !(it.result?.rows ?? []).length ? [blankDraft()] : toDrafts(it.result), // 읽지 못했으면 직접 입력할 빈 줄
+          checked: false,
+        }),
+      ),
+      ...ps,
+    ])
+  }, [inbox.data])
 
   const readFiles = async (files: File[]) => {
     if (!code) {
@@ -80,21 +144,10 @@ export function LotPhotoPage({ date }: { date: string }) {
       setPhotos((ps) => [{ id, name: f.name || '붙여 넣은 화면', url: URL.createObjectURL(f), code, status: 'reading', rows: [], checked: false }, ...ps])
       try {
         const res = await api.ReadLotPhoto(obj<service.LotPhotoRequest>({ imageBase64: await fileToBase64(f), code }))
-        const rows: Draft[] = (res.rows ?? []).map((r) => ({
-          key: nextKey(),
-          date: r.date,
-          supplierId: r.supplierId,
-          supplierRaw: r.supplierRaw,
-          qty: r.qty ? String(r.qty) : '',
-          expiry: r.expiry,
-          lot: r.lot,
-          matched: r.matched,
-          unsure: r.unsure ?? [],
-        }))
-        patchPhoto(id, { status: 'done', rows, result: res })
+        patchPhoto(id, { status: 'done', rows: toDrafts(res), result: res })
       } catch (e) {
         // 직접 입력할 빈 줄 하나를 열어 둔다
-        patchPhoto(id, { status: 'error', error: errorText(e), rows: [{ key: nextKey(), date: '', supplierId: 0, supplierRaw: '', qty: '', expiry: '', lot: '', matched: '', unsure: [] }] })
+        patchPhoto(id, { status: 'error', error: errorText(e), rows: [blankDraft()] })
       }
     }
   }
@@ -120,20 +173,59 @@ export function LotPhotoPage({ date }: { date: string }) {
   if (rk.isLoading) return <Skeleton rows={10} />
   if (rk.error || !rk.data) return <ErrorBox error={rk.error} onRetry={() => rk.refetch()} />
   const late = rk.data.effectiveDate < todayISO()
-  const selName = counted.find((r) => r.code === code)?.name ?? ''
+  const sel = counted.find((r) => r.code === code)
+  const selName = sel?.name ?? ''
+  const nameOf = (c: string) => counted.find((r) => r.code === c)?.name ?? c
+  const nextTodo = counted.find((r) => r.code !== saved && evCount(r.code) === 0)
+  const selCounted = !sel || (late ? sel.laterCountQty : sel.countQty) != null
 
   return (
     <div className="space-y-5">
       <PageHeader
         back={
           <Link to={paths.cut(date)} className="inline-flex items-center gap-1 text-[0.8125rem] font-semibold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="size-3.5" /> 회차로 돌아가기
+            <ArrowLeft className="size-3.5" /> 회차로 돌아가기 (2단계 실계수 입력)
           </Link>
         }
-        title="사입정보 사진 확인"
-        sub="실계수를 넣은 약품의 사입 이력(이팜 사입현황 화면 등)을 올리면 사입일자·사입도매·수량·유효기간·제조번호를 읽어 줍니다. 이 PC의 Windows 글자 인식을 써서 비용이 들지 않고 인터넷도 쓰지 않습니다. 읽은 결과는 사진과 비교해 확인한 뒤 저장하세요."
-        actions={<Button onClick={() => navigate(paths.cut(date))}>회차 화면</Button>}
+        title={
+          <span className="flex items-center gap-2">
+            <Badge tone="blue">3단계</Badge> 사입정보 사진 확인
+          </span>
+        }
+        sub="실계수를 넣은 약품의 사입 이력(이팜 사입현황 화면 등)을 올리면 사입일자·사입도매·수량·유효기간·제조번호를 읽어 줍니다. 이 PC의 Windows 글자 인식을 써서 비용이 들지 않고 인터넷도 쓰지 않습니다. 읽은 결과는 사진과 비교해 확인한 뒤 저장하면 4단계 판정 확인으로 이어집니다."
+        actions={
+          <>
+            <PhoneConnectButton />
+            {code && (
+              <Button variant="primary" icon={<ArrowRight className="size-4" />} onClick={() => navigate(paths.product(date, code))}>
+                4단계: 판정 확인
+              </Button>
+            )}
+          </>
+        }
       />
+
+      {saved && (
+        <Callout
+          tone="success"
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Button variant="primary" icon={<ArrowRight className="size-4" />} onClick={() => navigate(paths.product(date, saved))}>
+                4단계: 이 약품 판정 확인
+              </Button>
+              {nextTodo && <Button onClick={() => pick(nextTodo.code)}>다음 약품 사진 올리기</Button>}
+            </div>
+          }
+        >
+          「{nameOf(saved)}」 사입 근거를 저장했습니다. 이어서 <b>4단계 판정 확인</b>에서 서류보상·실물보상 판정을 확인하세요.
+        </Callout>
+      )}
+
+      {code && !selCounted && (
+        <Callout tone="warn">
+          「{selName}」은(는) 아직 실계수를 넣지 않았습니다. 사입정보는 지금 올려도 되지만, 회차 화면 2단계에서 실계수도 넣어 주세요.
+        </Callout>
+      )}
 
       <Card title={`실계수를 넣은 약품 ${counted.length}개`} pad={false}>
         {counted.length === 0 ? (
@@ -150,7 +242,7 @@ export function LotPhotoPage({ date }: { date: string }) {
                 <li key={r.code}>
                   <button
                     className={cx('flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-gray-50', sel && 'bg-blue-50 hover:bg-blue-50')}
-                    onClick={() => setCode(r.code)}
+                    onClick={() => pick(r.code)}
                     title="이 약품의 사입 이력 사진을 올리려면 누르세요"
                   >
                     {n > 0 ? <Check className="size-4 shrink-0 text-green-600" /> : <span className="size-4 shrink-0 rounded-full border-2 border-gray-300" />}
@@ -174,7 +266,7 @@ export function LotPhotoPage({ date }: { date: string }) {
         <div className="space-y-2">
           <Callout tone="info">
             <b>가장 정확한 방법:</b> 이팜에서 약품의 <b>사입현황</b> 탭을 열고 <Kbd>Win</Kbd>+<Kbd>Shift</Kbd>+<Kbd>S</Kbd>로 표 부분을 캡처한 뒤, 이 화면에서 <Kbd>Ctrl</Kbd>+<Kbd>V</Kbd> 로 붙여 넣으세요. 휴대폰으로 모니터를 찍은 사진도 되지만 화면 무늬 때문에
-            제조번호·유효기간을 자주 틀리게 읽습니다.
+            제조번호·유효기간을 자주 틀리게 읽습니다. 거래명세서처럼 종이로 된 사입 내역은 위쪽 <b>[휴대폰으로 찍기]</b>로 휴대폰에서 찍어 바로 보낼 수 있습니다.
           </Callout>
           <FileDrop
             accept="image/*"
@@ -197,8 +289,13 @@ export function LotPhotoPage({ date }: { date: string }) {
           suppliers={sups.data ?? []}
           onZoom={() => setZoom(p)}
           onChange={(patch) => patchPhoto(p.id, patch)}
+          onSaved={() => {
+            setSaved(p.code)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
           onClose={() => {
-            URL.revokeObjectURL(p.url)
+            if (p.url.startsWith('blob:')) URL.revokeObjectURL(p.url)
+            if (p.phoneId) void api.DismissPhoneItem(p.phoneId) // 휴대폰에서 온 사진은 PC 의 받은 목록에서도 뺀다
             setPhotos((ps) => ps.filter((x) => x.id !== p.id))
           }}
         />
@@ -222,6 +319,7 @@ function PhotoCard({
   suppliers,
   onZoom,
   onChange,
+  onSaved,
   onClose,
 }: {
   photo: Photo
@@ -229,6 +327,7 @@ function PhotoCard({
   suppliers: service.SupplierView[]
   onZoom: () => void
   onChange: (p: Partial<Photo>) => void
+  onSaved: () => void
   onClose: () => void
 }) {
   const save = useAction(
@@ -411,7 +510,14 @@ function PhotoCard({
                     loading={save.isPending}
                     disabled={rows.length === 0 || blocked > 0 || !photo.checked}
                     title={!photo.checked ? '사진과 비교해 확인한 뒤 체크하세요' : undefined}
-                    onClick={() => save.mutate([], { onSuccess: onClose })}
+                    onClick={() =>
+                      save.mutate([], {
+                        onSuccess: () => {
+                          onSaved()
+                          onClose()
+                        },
+                      })
+                    }
                   >
                     {rows.length}줄 저장
                   </Button>

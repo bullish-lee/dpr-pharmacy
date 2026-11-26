@@ -17,7 +17,11 @@ const keepDist = () => ({
 export default defineConfig({
   plugins: [react(), tailwindcss(), keepDist()],
   build: {
-    target: 'chrome111', // WebView2(Chromium) 기준
+    target: 'chrome111', // WebView2(Chromium) 기준 — 휴대폰 화면도 안드로이드 크롬 기준
     chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      // index.html = PC 앱 화면, phone.html = 휴대폰 연결 화면 (PC 의 DPR 이 사내망으로 열어 줌, phone.go)
+      input: { main: resolve(import.meta.dirname, 'index.html'), phone: resolve(import.meta.dirname, 'phone.html') },
+    },
   },
 })

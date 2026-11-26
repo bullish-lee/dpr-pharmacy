@@ -364,6 +364,80 @@ export namespace main {
 	        this.help = source["help"];
 	    }
 	}
+	export class PhoneItem {
+	    id: number;
+	    date: string;
+	    code: string;
+	    name: string;
+	    receivedAt: string;
+	    imageBase64: string;
+	    mediaType: string;
+	    result?: service.LotPhotoResult;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PhoneItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.date = source["date"];
+	        this.code = source["code"];
+	        this.name = source["name"];
+	        this.receivedAt = source["receivedAt"];
+	        this.imageBase64 = source["imageBase64"];
+	        this.mediaType = source["mediaType"];
+	        this.result = this.convertValues(source["result"], service.LotPhotoResult);
+	        this.error = source["error"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PhoneStatus {
+	    enabled: boolean;
+	    running: boolean;
+	    port: number;
+	    urls: string[];
+	    error: string;
+	    pending: number;
+	    relay: boolean;
+	    relayStatus: string;
+	    relayError: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PhoneStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.running = source["running"];
+	        this.port = source["port"];
+	        this.urls = source["urls"];
+	        this.error = source["error"];
+	        this.pending = source["pending"];
+	        this.relay = source["relay"];
+	        this.relayStatus = source["relayStatus"];
+	        this.relayError = source["relayError"];
+	    }
+	}
 	export class RulePreview {
 	    description: string;
 	    windowFrom: string;

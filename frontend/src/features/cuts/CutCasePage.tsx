@@ -4,6 +4,7 @@ import { api, errorText, queryClient, keys, useDeletions, useRanking, type servi
 import { dateDot, dateLong, dayBefore, dday, parseDate, pct, price, qty, todayISO, won, wonUnit } from '../../app/format'
 import { Link, navigate, paths } from '../../app/router'
 import { DataTable } from '../../components/DataTable'
+import { PhoneConnectButton } from '../../components/PhoneConnect'
 import { Badge, Button, Callout, Card, Empty, ErrorBox, Input, Kbd, Kpi, PageHeader, Segmented, Skeleton, cx } from '../../components/ui'
 import { useLotEvidence } from './LotPhotoPage'
 import { FlagBadges, RecBadge } from './shared'
@@ -45,6 +46,7 @@ export function CutCasePage({ date }: { date: string }) {
         sub={`고시 ${(data.notices ?? []).map((n) => `제${n}호`).join(', ') || '번호 미상'} · 재고 기준 ${dateDot(data.asOf)}${data.isPast ? ' (시행 전날)' : ''}`}
         actions={
           <>
+            <PhoneConnectButton />
             <Button icon={<Upload className="size-4" />} onClick={() => navigate(paths.imports())}>
               최신 자료 올리기
             </Button>
@@ -157,15 +159,16 @@ function TaskList({ data, heldRows }: { data: service.Ranking; heldRows: service
     { title: '최신 사입·조제 자료 반영', detail: stale ? '자료가 오래되었습니다 — 이팜에서 내려받아 올려주세요' : '최신 자료 기준', st: stale ? 'attention' : 'done', to: paths.imports() },
     { title: '실계수 입력 (선택)', detail: `${counted} / ${heldRows.length}개 입력 · 손실이 큰 품목부터 세어보세요`, st: heldRows.length === 0 ? 'na' : counted === 0 ? 'todo' : counted < heldRows.length ? 'doing' : 'done' },
     {
+      // 실계수를 넣은 뒤 손실 순위 표의 각 약품 오른쪽 화살표(→)로 들어간다
+      title: '사입정보 사진 확인',
+      detail: counted === 0 ? '실계수를 넣은 품목이 없습니다' : `${withPhoto} / ${counted}개 품목 · 실계수 입력 후 각 약품 오른쪽 화살표(→)를 누르세요`,
+      st: counted === 0 ? 'na' : withPhoto === 0 ? 'todo' : withPhoto < counted ? 'doing' : 'done',
+      to: counted === 0 ? undefined : paths.lotPhotos(data.effectiveDate),
+    },
+    {
       title: '판정 확인·확정',
       detail: `서류 ${data.totals.document} · 실물 검토 ${data.totals.physical}${data.totals.check ? ` · 실제가 확인 ${data.totals.check}` : ''} · 확정 ${confirmed}/${heldRows.length}`,
       st: heldRows.length === 0 ? 'na' : data.totals.check > 0 ? 'attention' : confirmed === 0 ? 'todo' : confirmed < heldRows.length ? 'doing' : 'done',
-    },
-    {
-      title: '사입정보 사진 확인',
-      detail: counted === 0 ? '실계수를 넣은 품목이 없습니다' : `${withPhoto} / ${counted}개 품목 · 유효기간·제조번호가 보이는 사입 내역을 사진으로 올리세요`,
-      st: counted === 0 ? 'na' : withPhoto === 0 ? 'todo' : withPhoto < counted ? 'doing' : 'done',
-      to: paths.lotPhotos(data.effectiveDate),
     },
     {
       title: '바코드로 도매 확인',
@@ -315,7 +318,11 @@ function RankingTable({ date, asOf, rows, totals }: { date: string; asOf: string
             <div className="px-3">
               <RecBadge rec={r.recommendation} settle={r.settleStatus} upside={r.physicalUpside} />
             </div>
-            <button className="text-gray-400 hover:text-gray-700" onClick={() => navigate(paths.product(date, r.code))} title="상세">
+            <button
+              className={cx('hover:text-blue-700', r.countQty != null || r.laterCountQty != null ? 'text-blue-600' : 'text-gray-400')}
+              onClick={() => navigate(paths.lotPhotos(date, r.code))}
+              title="3단계: 이 약품의 사입정보(유효기간·제조번호) 사진 확인"
+            >
               <ArrowRight className="size-4" />
             </button>
           </div>
@@ -326,7 +333,7 @@ function RankingTable({ date, asOf, rows, totals }: { date: string; asOf: string
           보유 <b className="num">{totals.held}</b>개 품목 · 예상 손실 합계 <b className="num">{wonUnit(totals.grossLoss)}</b> · 예상 보상 <b className="num">{wonUnit(totals.recovery)}</b>
         </span>
         <span className="flex items-center gap-1.5 text-gray-600">
-          실계수(직접 센 수량): <Kbd>Enter</Kbd> 저장·다음 <Kbd>Esc</Kbd> 되돌리기 · 빈칸으로 저장하면 삭제
+          실계수(직접 센 수량): <Kbd>Enter</Kbd> 저장·다음 <Kbd>Esc</Kbd> 되돌리기 · 빈칸으로 저장하면 삭제 · <ArrowRight className="size-3.5 text-blue-600" /> 사입정보 사진(3단계)
         </span>
       </div>
     </div>

@@ -58,6 +58,18 @@ export function wireEvents() {
       queryClient.invalidateQueries({ queryKey: keys.all })
     })
     EventsOn('data-changed', () => queryClient.invalidateQueries({ queryKey: keys.all }))
+    EventsOn('phone-status', () => queryClient.invalidateQueries({ queryKey: [...keys.all, 'phone-status'] })) // 외부 중계 준비됨·끊김 (relay.go)
+    // 휴대폰에서 사입정보 사진이 왔다 (phone.go) → 알림 + 3단계 화면으로 바로 가기
+    EventsOn('phone-inbox', (d?: { id: number; date: string; code: string; name: string; rows: number; error: string }) => {
+      queryClient.invalidateQueries({ queryKey: [...keys.all, 'phone-inbox'] })
+      queryClient.invalidateQueries({ queryKey: [...keys.all, 'phone-status'] })
+      if (!d?.id) return
+      toast.info('휴대폰에서 사입정보 사진이 왔습니다', {
+        description: `${d.name} · ${d.error ? '글자를 읽지 못함' : `${d.rows}줄 읽음`} — 확인 후 저장하세요`,
+        duration: 10000,
+        action: { label: '확인하러 가기', onClick: () => (window.location.hash = `#/cuts/${d.date}/lots/${d.code}`) },
+      })
+    })
   } catch {
     /* 브라우저 단독 실행(바인딩 없음) */
   }

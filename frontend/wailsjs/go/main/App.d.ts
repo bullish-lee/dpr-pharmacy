@@ -63,6 +63,8 @@ export function DeleteSettlement(arg1:number):Promise<void>;
 
 export function DeleteSupplier(arg1:number):Promise<string>;
 
+export function DismissPhoneItem(arg1:number):Promise<void>;
+
 export function DrugInfo(arg1:string):Promise<service.DrugDetail>;
 
 export function ExportReportCSV(arg1:service.SettlementFilter):Promise<string>;
@@ -131,6 +133,10 @@ export function OpenURL(arg1:string):Promise<void>;
 
 export function ParseBarcode(arg1:string):Promise<domain.GS1>;
 
+export function PhoneInbox(arg1:string):Promise<Array<main.PhoneItem>>;
+
+export function PhoneStatus():Promise<main.PhoneStatus>;
+
 export function PickFile(arg1:string):Promise<string>;
 
 export function PickFolder(arg1:string):Promise<string>;
@@ -156,6 +162,8 @@ export function RecordScan(arg1:service.ScanInput):Promise<service.ScanResult>;
 export function RemoveWindowsTasks():Promise<void>;
 
 export function Report(arg1:service.SettlementFilter):Promise<service.Report>;
+
+export function ResetPhoneToken():Promise<main.PhoneStatus>;
 
 export function ResolveScan(arg1:number,arg2:number):Promise<void>;
 
@@ -186,6 +194,10 @@ export function SetBaseline(arg1:string,arg2:string):Promise<void>;
 export function SetDataGoKey(arg1:string):Promise<void>;
 
 export function SetPackSize(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
+
+export function SetPhoneEnabled(arg1:boolean):Promise<main.PhoneStatus>;
+
+export function SetPhoneRelay(arg1:boolean):Promise<main.PhoneStatus>;
 
 export function SetScanQty(arg1:number,arg2:number):Promise<void>;
 

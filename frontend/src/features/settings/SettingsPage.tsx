@@ -8,6 +8,7 @@ import { Badge, Button, Callout, Card, Field, Input, PageHeader, Segmented, Swit
 import { ClipboardSetText } from '../../../wailsjs/runtime/runtime'
 import { DataFoldersCard } from './DataFoldersCard'
 import { DataGoKeyDialog } from '../../components/DataGoKeyDialog'
+import { PhoneConnectPanel } from '../../components/PhoneConnect'
 
 const EMPTY_FORM = {
   crawlEnabled: true, crawlTimes: '', crawlInclude: '', crawlExclude: '', zoom: '100', theme: 'light',
@@ -176,10 +177,14 @@ export function SettingsPage() {
 
         <Card title="사입정보 사진 판독">
           <p className="text-[0.8125rem] text-gray-600">
-            약가인하 회차 4단계에서 사입 이력 사진을 올리면 사입일자·사입도매·수량·유효기간·제조번호를 읽어 줍니다. Windows에 들어 있는 글자 인식(OCR)을 써서 비용이 들지 않고 사진을 인터넷으로 보내지 않습니다.
+            약가인하 회차 3단계(손실 순위 표에서 실계수 입력 후 약품 오른쪽 화살표)에서 사입 이력 사진을 올리면 사입일자·사입도매·수량·유효기간·제조번호를 읽어 줍니다. Windows에 들어 있는 글자 인식(OCR)을 써서 비용이 들지 않고 사진을 인터넷으로 보내지 않습니다.
             Windows 설정 → 시간 및 언어 → 언어에 '한국어'가 있으면 됩니다. 이팜 화면을 캡처(Win+Shift+S)해 붙여 넣는 방법이 가장 정확하고, 휴대폰 사진은 제조번호를 자주 틀리게 읽으니 꼭 확인하세요.
           </p>
           <OcrCheck />
+        </Card>
+
+        <Card title="휴대폰 연결">
+          <PhoneConnectPanel />
         </Card>
 
         <Card title="꺼져 있어도 확인 (Windows 작업 스케줄러)">
